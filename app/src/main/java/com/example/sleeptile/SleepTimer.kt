@@ -32,12 +32,15 @@ object SleepTimer {
         return if (end > System.currentTimeMillis()) end else 0L
     }
 
+    /** Запланированное время без проверки «в будущем ли оно» (нужно для журнала). */
+    fun plannedEnd(ctx: Context): Long = prefs(ctx).getLong(KEY_END, 0L)
+
     fun isRunning(ctx: Context): Boolean = endAt(ctx) != 0L
 
     fun start(ctx: Context, minutes: Int) {
         val end = System.currentTimeMillis() + minutes * 60_000L
         prefs(ctx).edit().putLong(KEY_END, end).apply()
-        Alarms.setExact(ctx, end, pending(ctx))
+        Alarms.setAlarmClock(ctx, end, pending(ctx))
         refreshTile(ctx)
     }
 

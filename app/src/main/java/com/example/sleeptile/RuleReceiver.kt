@@ -17,12 +17,14 @@ class RuleReceiver : BroadcastReceiver() {
         if (kind == RuleScheduler.KIND_START) {
             if (rule.action == RuleAction.STOP_AUDIO) {
                 val result = goAsync()
-                AudioStopper.stop(context) { result.finish() }
+                AudioStopper.stop(context, "Правило «${rule.action.title}»") { result.finish() }
             } else {
                 RuleExecutor.start(context, rule)
+                EventLog.add(context, "Правило «${rule.action.title}», начало: ${EventLog.screenState(context)}")
             }
         } else {
             RuleExecutor.end(context, rule)
+            EventLog.add(context, "Правило «${rule.action.title}», конец: ${EventLog.screenState(context)}")
         }
     }
 }

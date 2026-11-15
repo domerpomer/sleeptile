@@ -158,6 +158,16 @@ class MainActivity : Activity() {
         for (r in rules) col.addView(ruleRow(r))
         col.addView(button("+ Добавить правило") { editRule(null) })
 
+        // ===== Журнал =====
+        col.addView(divider())
+        col.addView(tv("Журнал срабатываний", 22f, true))
+        val log = EventLog.all(this)
+        if (log.isEmpty()) {
+            col.addView(tv("Пока пусто. Здесь будет видно, когда на самом деле сработал таймер или правило."))
+        } else {
+            for (entry in log) col.addView(tv(entry, 14f))
+        }
+
         val scroll = ScrollView(this)
         scroll.addView(col)
         setContentView(scroll)

@@ -8,6 +8,8 @@
         android:maxSdkVersion="32" />
     <!-- Чтобы после перезагрузки восстановить расписание -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Чтобы телефон не засыпал в момент остановки звука -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Без этой строки приложение не появится в списке «Доступ к режиму Не беспокоить» -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
