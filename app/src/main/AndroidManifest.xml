@@ -8,6 +8,12 @@
         android:maxSdkVersion="32" />
     <!-- Чтобы после перезагрузки восстановить расписание -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Загрузка расписания из интернета -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Уведомления о парах (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Обои экрана блокировки с расписанием -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- Чтобы телефон не засыпал в момент остановки звука -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Без этой строки приложение не появится в списке «Доступ к режиму Не беспокоить» -->
@@ -49,6 +55,16 @@
         <receiver
             android:name=".RuleReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".SchoolReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".WallpaperReceiver"
+            android:exported="false" />
+        <service
+            android:name=".FetchJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

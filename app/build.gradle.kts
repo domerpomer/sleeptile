@@ -13,8 +13,8 @@ android {
         // 34, а не 35: на Android 15 приложениям с targetSdk 35 запрещён
         // запрос аудиофокуса из фона, а он нужен для остановки звука.
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
     }
 
     signingConfigs {

@@ -9,7 +9,7 @@ import java.util.Locale
 /** Короткий журнал: когда на самом деле сработал таймер или правило. Показывается внизу главного экрана. */
 object EventLog {
     private const val KEY = "log"
-    private const val MAX = 10
+    private const val MAX = 40
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("event_log", Context.MODE_PRIVATE)
 
@@ -24,6 +24,10 @@ object EventLog {
     fun all(ctx: Context): List<String> {
         val s = prefs(ctx).getString(KEY, "") ?: ""
         return if (s.isEmpty()) emptyList() else s.split("\n")
+    }
+
+    fun clear(ctx: Context) {
+        prefs(ctx).edit().remove(KEY).apply()
     }
 
     fun screenState(ctx: Context): String {
