@@ -13,7 +13,7 @@ import java.util.Locale
 
 class SchoolDataSet(val schedule: JSONObject?, val bells: JSONObject?, val fromNetwork: Boolean)
 
-/** Чтение расписания и звонков, подбор уроков для класса и подгруппы, построение событий. */
+/** Чтение расписания и звонков, парсинг текстового ввода, заготовки (шаблоны). */
 object SchoolData {
     const val FILE_SCHEDULE = "school_schedule.json"
     const val FILE_BELLS = "school_bells.json"
@@ -24,7 +24,6 @@ object SchoolData {
 
     // ========== ЖЁСТКО ЗАШИТОЕ РАСПИСАНИЕ ЗВОНКОВ ==========
 
-    /** Звонки: номер урока → (начало в минутах от полуночи, конец в минутах). */
     private val BELLS_MON: Map<Int, Pair<Int, Int>> = mapOf(
         1  to Pair(8*60+0,  8*60+30),
         2  to Pair(8*60+40, 9*60+20),
@@ -55,11 +54,9 @@ object SchoolData {
         return when (dow) {
             DayOfWeek.MONDAY -> BELLS_MON
             DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY -> BELLS_TUE_FRI
-            else -> emptyMap() // суббота и воскресенье — нет уроков
+            else -> emptyMap()
         }
     }
-
-    // ========== ЗАГРУЗКА / ХРАНЕНИЕ ФАЙЛОВ (для совместимости) ==========
 
     private fun readLocal(ctx: Context, name: String): String? {
         return try {
@@ -90,18 +87,31 @@ object SchoolData {
     fun load(ctx: Context): SchoolDataSet {
         val s = readLocal(ctx, FILE_SCHEDULE)
         val schedule = parse(s) ?: parse(readAsset(ctx, "schedule.json"))
-        return SchoolDataSet(schedule, null, s != null && parse(s) != null)
+        return SchoolDataSet(schedule, null, false)
     }
 
     // ========== ЛОКАЛЬНОЕ РАСПИСАНИЕ УРОКОВ (ввод текстом) ==========
 
     private const val PREF_LESSONS = "local_lessons"
+    private const val PREF_TEMPLATES = "schedule_templates"
 
-    /** Ключ для хранения: "dow_1" = понедельник, "date_2026-11-25" = конкретная дата. */
     private fun lessonPrefs(ctx: Context) =
         ctx.getSharedPreferences(PREF_LESSONS, Context.MODE_PRIVATE)
 
-    /** Сохраняет список уроков для дня недели (1=пн..7=вс). */
+    private fun templatePrefs(ctx: Context) =
+        ctx.getSharedPreferences(PREF_TEMPLATES, Context.MODE_PRIVATE)
+
+    fun hasAnyLocalLessons(ctx: Context): Boolean {
+        val p = lessonPrefs(ctx)
+        for (dow in 1..7) {
+            val json = p.getString("dow_$dow", null) ?: continue
+            try {
+                if (JSONArray(json).length() > 0) return true
+            } catch (e: Exception) { }
+        }
+        return false
+    }
+
     fun saveLocalLessons(ctx: Context, dow: Int, lessons: List<Triple<Int, String, String>>) {
         val arr = JSONArray()
         for ((n, subj, room) in lessons) {
@@ -110,16 +120,6 @@ object SchoolData {
         lessonPrefs(ctx).edit().putString("dow_$dow", arr.toString()).apply()
     }
 
-    /** Сохраняет список уроков для конкретной даты (приоритет над днём недели). */
-    fun saveLocalLessonsForDate(ctx: Context, date: LocalDate, lessons: List<Triple<Int, String, String>>) {
-        val arr = JSONArray()
-        for ((n, subj, room) in lessons) {
-            arr.put(JSONObject().put("n", n).put("s", subj).put("r", room))
-        }
-        lessonPrefs(ctx).edit().putString("date_$date", arr.toString()).apply()
-    }
-
-    /** Загружает локальные уроки: сначала проверяет конкретную дату, потом день недели. */
     fun loadLocalLessons(ctx: Context, date: LocalDate): List<Triple<Int, String, String>>? {
         val p = lessonPrefs(ctx)
         val dateKey = "date_$date"
@@ -138,19 +138,6 @@ object SchoolData {
         }
     }
 
-    /** Есть ли хотя бы один день недели с введёнными уроками. */
-    fun hasAnyLocalLessons(ctx: Context): Boolean {
-        val p = lessonPrefs(ctx)
-        for (dow in 1..7) {
-            val json = p.getString("dow_$dow", null) ?: continue
-            try {
-                if (JSONArray(json).length() > 0) return true
-            } catch (e: Exception) { }
-        }
-        return false
-    }
-
-    /** Загружает сохранённые уроки для дня недели (для показа в редакторе). */
     fun loadLocalLessonsForDow(ctx: Context, dow: Int): List<Triple<Int, String, String>>? {
         val json = lessonPrefs(ctx).getString("dow_$dow", null) ?: return null
         return try {
@@ -166,22 +153,30 @@ object SchoolData {
         }
     }
 
-    /** Парсит текст формата:
-     *  1. Алгебра - 206
-     *  2 Русский язык — 316
-     *  3. Физика
-     *  Поддерживает разные тире (-, –, —), с точкой и без, кабинет необязателен.
-     */
+    // ========== ЗАГОТОВКИ (ШАБЛОНЫ) ==========
+
+    fun saveTemplate(ctx: Context, dow: Int, text: String) {
+        templatePrefs(ctx).edit().putString("template_$dow", text.trim()).apply()
+    }
+
+    fun loadTemplate(ctx: Context, dow: Int): String? {
+        val s = templatePrefs(ctx).getString("template_$dow", null)
+        return if (s.isNullOrBlank()) null else s
+    }
+
+    fun hasTemplate(ctx: Context, dow: Int): Boolean =
+        !templatePrefs(ctx).getString("template_$dow", "").isNullOrBlank()
+
+    // ========== ПАРСИНГ ТЕКСТОВОГО ВВОДА ==========
+
     fun parseTextSchedule(text: String): List<Triple<Int, String, String>> {
         val result = ArrayList<Triple<Int, String, String>>()
         for (line in text.lines()) {
             val trimmed = line.trim()
             if (trimmed.isEmpty()) continue
-            // Пытаемся извлечь: номер [.)] предмет [-–—] кабинет
             val m = Regex("""^(\d+)\s*[.)]\s*(.+)""").find(trimmed) ?: continue
             val num = m.groupValues[1].toIntOrNull() ?: continue
             val rest = m.groupValues[2].trim()
-            // Разделяем по тире
             val dashPattern = Regex("""\s+[-–—]\s+""")
             val parts = dashPattern.split(rest, 2)
             val subject = parts[0].trim()
@@ -193,6 +188,53 @@ object SchoolData {
         return result
     }
 
+    /** Умный импорт целого расписания из .txt текста с разбивкой по дням недели. */
+    fun importFullSchedule(ctx: Context, fullText: String): Int {
+        val lines = fullText.lines()
+        var currentDow = 0
+        val dayBuffers = HashMap<Int, StringBuilder>()
+
+        val dayRegex = Regex("""(?i)^\s*(понедельник|вторник|среда|четверг|пятница|суббота|пн|вт|ср|чт|пт|сб)\b[:\-–—\s]*""")
+
+        fun matchDow(str: String): Int {
+            val lower = str.lowercase(Locale.ROOT)
+            return when {
+                lower.startsWith("пон") || lower.startsWith("пн") -> 1
+                lower.startsWith("вто") || lower.startsWith("вт") -> 2
+                lower.startsWith("сре") || lower.startsWith("ср") -> 3
+                lower.startsWith("чет") || lower.startsWith("чт") -> 4
+                lower.startsWith("пят") || lower.startsWith("пт") -> 5
+                lower.startsWith("суб") || lower.startsWith("сб") -> 6
+                else -> 0
+            }
+        }
+
+        for (line in lines) {
+            val m = dayRegex.find(line)
+            if (m != null) {
+                val dow = matchDow(m.groupValues[1])
+                if (dow in 1..6) {
+                    currentDow = dow
+                    dayBuffers.getOrPut(dow) { StringBuilder() }
+                    continue
+                }
+            }
+            if (currentDow in 1..6) {
+                dayBuffers.getOrPut(currentDow) { StringBuilder() }.append(line).append("\n")
+            }
+        }
+
+        var updatedDays = 0
+        for ((dow, sb) in dayBuffers) {
+            val parsed = parseTextSchedule(sb.toString())
+            if (parsed.isNotEmpty()) {
+                saveLocalLessons(ctx, dow, parsed)
+                updatedDays++
+            }
+        }
+        return updatedDays
+    }
+
     // ========== ПОСТРОЕНИЕ СПИСКА УРОКОВ НА ДЕНЬ ==========
 
     private fun toMillis(date: LocalDate, minutes: Int, zone: ZoneId): Long =
@@ -202,17 +244,13 @@ object SchoolData {
         val test = testLessons(ctx, date)
         if (test != null) return test
 
-        // 1) Пытаемся из локального ввода
         val local = loadLocalLessons(ctx, date)
         if (local != null && local.isNotEmpty()) {
             return localToResolved(local, date)
         }
-
-        // 2) Fallback на сетевое расписание
-        return realLessonsForDay(ctx, data, date)
+        return emptyList()
     }
 
-    /** Преобразует список (номер, предмет, кабинет) в ResolvedLesson с временами из звонков. */
     private fun localToResolved(lessons: List<Triple<Int, String, String>>, date: LocalDate): List<ResolvedLesson> {
         val bells = bellsFor(date.dayOfWeek)
         if (bells.isEmpty()) return emptyList()
@@ -221,48 +259,6 @@ object SchoolData {
         for ((n, subject, room) in lessons) {
             val bell = bells[n] ?: continue
             out.add(ResolvedLesson(n, subject, room, toMillis(date, bell.first, zone), toMillis(date, bell.second, zone)))
-        }
-        out.sortBy { it.n }
-        return out
-    }
-
-    /** Уроки по сетевому расписанию (без тестового режима). */
-    fun realLessonsForDay(ctx: Context, data: SchoolDataSet, date: LocalDate): List<ResolvedLesson> {
-        val klass = SchoolSettings.klass(ctx)
-        val group = SchoolSettings.group(ctx)
-        if (klass.isEmpty()) return emptyList()
-
-        val day = data.schedule?.optJSONObject("days")?.optJSONObject(date.toString())
-            ?: return emptyList()
-        val arr = day.optJSONArray(klass) ?: return emptyList()
-        val bells = bellsFor(date.dayOfWeek)
-        val zone = ZoneId.systemDefault()
-
-        val out = ArrayList<ResolvedLesson>()
-        for (i in 0 until arr.length()) {
-            val l = arr.getJSONObject(i)
-            val n = l.getInt("n")
-            val bell = bells[n] ?: continue
-            val parts = l.optJSONArray("p") ?: continue
-            var chosen: JSONObject? = null
-            for (j in 0 until parts.length()) {
-                val part = parts.getJSONObject(j)
-                val g = part.optInt("g", 0)
-                if (g == 0 || g == group) {
-                    chosen = part
-                    break
-                }
-            }
-            if (chosen == null) continue
-            out.add(
-                ResolvedLesson(
-                    n,
-                    chosen.getString("s"),
-                    chosen.optString("r", ""),
-                    toMillis(date, bell.first, zone),
-                    toMillis(date, bell.second, zone)
-                )
-            )
         }
         out.sortBy { it.n }
         return out
@@ -281,7 +277,6 @@ object SchoolData {
         return out
     }
 
-    /** Ближайший день, для которого есть уроки (сегодня — только пока уроки не кончились). */
     fun relevantDay(ctx: Context, data: SchoolDataSet, now: Long): Pair<LocalDate, List<ResolvedLesson>>? {
         val today = LocalDate.now()
         for (d in 0..7) {
@@ -294,7 +289,6 @@ object SchoolData {
         return null
     }
 
-    /** Любой актуальный день с уроками (для обоев и предпросмотра): ищет сегодня, завтра или любой день с уроками. */
     fun anyRelevantDay(ctx: Context, data: SchoolDataSet): Pair<LocalDate, List<ResolvedLesson>>? {
         val rel = relevantDay(ctx, data, System.currentTimeMillis())
         if (rel != null) return rel
@@ -320,7 +314,6 @@ object SchoolData {
         return null
     }
 
-    /** Промежутки «тишины»: уроки, между которыми перемена не длиннее keepGapMin, объединяются. */
     fun windows(lessons: List<ResolvedLesson>, keepGapMin: Int): List<LongArray> {
         val out = ArrayList<LongArray>()
         for (l in lessons) {
@@ -333,8 +326,6 @@ object SchoolData {
         }
         return out
     }
-
-    // ---------- проверка «за 5 минут» ----------
 
     private fun testUntil(ctx: Context): Long = SchoolSettings.prefs(ctx).getLong("test_until", 0L)
 
@@ -371,8 +362,6 @@ object SchoolData {
         }
     }
 
-    // ---------- текст для экрана ----------
-
     fun hm(ms: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
 
     fun describeLesson(l: ResolvedLesson): String =
@@ -399,7 +388,7 @@ object SchoolData {
             shown++
             if (shown >= 3) break
         }
-        if (shown == 0) return "Для выбранного класса пока нет расписания на ближайшие дни."
+        if (shown == 0) return "Пока нет уроков на ближайшие дни.\nВведите уроки в расписание выше."
         return sb.toString().trim()
     }
 }

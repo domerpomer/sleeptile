@@ -23,6 +23,7 @@ import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -40,11 +41,13 @@ import java.util.Locale
 
 class MainActivity : Activity() {
 
+    private val REQ_PICK_TXT = 2001
     private var tab = 0
     private var scrollView: ScrollView? = null
     private var renderedTab = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        requestWindowFeature(Window.FEATURE_NO_TITLE)
         super.onCreate(savedInstanceState)
         tab = getSharedPreferences("ui", MODE_PRIVATE).getInt("tab", 0).coerceIn(0, 3)
     }
@@ -52,6 +55,27 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         render()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_TXT && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                if (text.isNotBlank()) {
+                    val count = SchoolData.importFullSchedule(this, text)
+                    if (count > 0) {
+                        toast("Импортировано дней: $count")
+                        onSchoolChanged()
+                    } else {
+                        toast("Не удалось распознать дни недели.\nПример формата в файле:\nПонедельник:\n1. Алгебра - 206")
+                    }
+                }
+            } catch (e: Exception) {
+                toast("Ошибка чтения файла: ${e.message}")
+            }
+        }
     }
 
     // ================= помощники для интерфейса =================
@@ -232,7 +256,8 @@ class MainActivity : Activity() {
 
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(14), dp(8), dp(14), dp(24))
+        // Щедрый нижний отступ dp(100), чтобы нижние кнопки никогда не обрезались панелью навигации:
+        col.setPadding(dp(14), dp(16), dp(14), dp(100))
 
         val scroll = ScrollView(this)
         scroll.addView(col)
@@ -299,29 +324,14 @@ class MainActivity : Activity() {
     // ================= вкладка «Школа» =================
 
     private fun buildSchoolTab(col: LinearLayout) {
-        col.addView(tv("Мои уроки", 26f, true))
-        col.addView(hint("Расписание, звук и уведомления для школы"))
+        col.addView(tv("Школьный режим", 26f, true))
+        col.addView(hint("Расписание, звук и уведомления"))
 
-        // ---------- Мой класс ----------
-        val klass = SchoolSettings.klass(this)
-        val group = SchoolSettings.group(this)
-        val c1 = card("Мой класс")
-        choiceRow(
-            c1, "Класс", SchoolSettings.CLASSES, SchoolSettings.CLASSES.indexOf(klass),
-            if (klass.isEmpty()) "не выбран" else klass
-        ) { which ->
-            SchoolSettings.setKlass(this, SchoolSettings.CLASSES[which])
-            onSchoolChanged()
-        }
-        choiceRow(
-            c1, "Подгруппа", listOf("1 подгруппа", "2 подгруппа"), group - 1, "$group"
-        ) { which ->
-            SchoolSettings.setGroup(this, which + 1)
-            onSchoolChanged()
-        }
+        // ---------- Главный выключатель ----------
+        val c1 = card("Школьный режим")
         toggleRow(
             c1, "Школьный режим",
-            "Главный выключатель: пока он выключен, уведомления, звук и обои не работают",
+            "Пока выключен — звук, уведомления и обои не меняются",
             SchoolSettings.enabled(this)
         ) { on ->
             SchoolSettings.setEnabled(this, on)
@@ -329,33 +339,31 @@ class MainActivity : Activity() {
             onSchoolChanged()
         }
         c1.addView(button("Моё расписание на ближайшие дни") {
-            val titleText = if (klass.isNotEmpty()) "Расписание $klass" else "Моё расписание"
             AlertDialog.Builder(this)
-                .setTitle(titleText)
+                .setTitle("Моё расписание")
                 .setMessage(SchoolData.describeUpcoming(this))
                 .setPositiveButton("OK", null)
                 .show()
         })
         col.addView(c1)
 
-        // ---------- Ввод расписания текстом ----------
-        val c2 = card("Расписание уроков",
-            "Введите список уроков простым текстом.\n" +
-            "Формат: «1. Алгебра - 206» (кабинет необязателен).\n" +
-            "Парсер принимает любые тире (-, –, —) и номер с точкой или скобкой.")
-
+        // ---------- Расписание уроков ----------
+        val c2 = card("Расписание уроков")
         val dowNames = arrayOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
         for (dow in 1..5) {
-            val saved = SchoolData.loadLocalLessonsForDow(this, dow)
-            val label = dowNames[dow - 1]
-            val info = if (saved != null && saved.isNotEmpty()) {
-                "$label (${saved.size} ур.)"
-            } else {
-                "$label — не задано"
+            c2.addView(dayScheduleCard(dow, dowNames[dow - 1]))
+            if (dow < 5) {
+                val divider = View(this).apply {
+                    setBackgroundColor(0x1F888888)
+                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                        setMargins(dp(16), 0, dp(16), 0)
+                    }
+                }
+                c2.addView(divider)
             }
-            c2.addView(button(info) { openTextEditor(dow, dowNames[dow - 1]) })
         }
-        c2.addView(hint("Расписание по дню недели повторяется каждую неделю. Вводить заново не нужно."))
+        c2.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)) })
+        c2.addView(button("Загрузить расписание из .txt файла") { pickTxtFile() })
         col.addView(c2)
 
         // ---------- Уведомления ----------
@@ -475,40 +483,61 @@ class MainActivity : Activity() {
         })
         c5.addView(button("Сбросить обои") { toast(SchoolWallpaper.reset(this)) })
         col.addView(c5)
+    }
 
-        // ---------- Данные ----------
-        val cd = card("Данные расписания")
-        val data = SchoolData.load(this)
-        val source = if (data.fromNetwork) "загружено из интернета" else "локальное / встроенное"
-        cd.addView(tv("Источник: $source", 14f))
-        val status = SchoolSettings.lastStatus(this)
-        if (status.isNotEmpty()) cd.addView(hint(status))
-        cd.addView(button("Обновить расписание сейчас") {
-            toast("Загружаю…")
-            val app = applicationContext
-            Thread {
-                val result = SchoolFetcher.fetch(app)
-                SchoolScheduler.tick(app)
-                runOnUiThread {
-                    toast(result)
-                    render()
-                }
-            }.start()
-        })
-        cd.addView(button("Источник данных (адрес)") { editSource() })
-        cd.addView(
-            button(if (SchoolData.testActive(this)) "Остановить проверку" else "Проверка за 5 минут") {
-                if (SchoolData.testActive(this)) {
-                    SchoolData.stopTest(this)
-                } else {
-                    SchoolData.startTest(this)
-                    ensureNotificationPermission()
-                }
-                onSchoolChanged()
-            }
-        )
-        cd.addView(hint("Проверка: через минуту начнётся «урок 1» (звук выключится), потом «перемена», потом «урок 2». Всё закончится за 5 минут."))
-        col.addView(cd)
+    private fun dayScheduleCard(dow: Int, dowName: String): View {
+        val saved = SchoolData.loadLocalLessonsForDow(this, dow)
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.VERTICAL
+        row.setPadding(0, dp(10), 0, dp(10))
+        row.background = selectableBg()
+
+        val titleRow = LinearLayout(this)
+        titleRow.orientation = LinearLayout.HORIZONTAL
+        titleRow.gravity = Gravity.CENTER_VERTICAL
+
+        val title = TextView(this)
+        title.text = dowName
+        title.textSize = 16f
+        title.setTypeface(title.typeface, Typeface.BOLD)
+        title.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+
+        val count = TextView(this)
+        count.text = if (saved.isNullOrEmpty()) "нет уроков ›" else "${saved.size} ур. ›"
+        count.textSize = 14f
+        count.setTextColor(if (saved.isNullOrEmpty()) 0xFF888888.toInt() else 0xFF7986CB.toInt())
+
+        titleRow.addView(title)
+        titleRow.addView(count)
+        row.addView(titleRow)
+
+        val summary = TextView(this)
+        if (!saved.isNullOrEmpty()) {
+            summary.text = saved.joinToString(", ") { "${it.first}. ${it.second}" }
+            summary.setTextColor(0xFFCCCCCC.toInt())
+        } else {
+            summary.text = "нажмите, чтобы задать уроки"
+            summary.setTextColor(0xFF777777.toInt())
+        }
+        summary.textSize = 13f
+        summary.setPadding(0, dp(4), 0, 0)
+        row.addView(summary)
+
+        row.setOnClickListener { openTextEditor(dow, dowName) }
+        return row
+    }
+
+    private fun pickTxtFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/plain", "text/*"))
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_TXT)
+        } catch (e: Exception) {
+            toast("Не удалось открыть выбор файла")
+        }
     }
 
     // ================= вкладка «Разрешения» =================
@@ -569,7 +598,7 @@ class MainActivity : Activity() {
         col.addView(cb)
     }
 
-    // ---------- Редактор расписания текстом ----------
+    // ---------- Редактор расписания текстом с заготовками ----------
 
     private fun openTextEditor(dow: Int, dowName: String) {
         val saved = SchoolData.loadLocalLessonsForDow(this, dow)
@@ -579,16 +608,70 @@ class MainActivity : Activity() {
             }
         } else ""
 
-        val input = EditText(this)
-        input.hint = "1. Алгебра - 206\n2. Русский язык - 316\n3. Физика"
-        input.minLines = 6
-        input.setText(existing)
-        input.textSize = 14f
-        input.setPadding(dp(16), dp(8), dp(16), dp(8))
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+
+        val input = EditText(this).apply {
+            hint = "Номер. Предмет - кабинет\n(например: 1. Алгебра - 206)"
+            minLines = 6
+            setText(existing)
+            textSize = 14f
+            setSelection(text.length)
+        }
+        container.addView(input)
+
+        val templateBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, dp(4))
+        }
+
+        val btnInsertTemplate = Button(this).apply {
+            text = "Вставить шаблон"
+            isAllCaps = false
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, 0, dp(4), 0)
+            }
+            setOnClickListener {
+                val tpl = SchoolData.loadTemplate(this@MainActivity, dow)
+                if (tpl != null) {
+                    input.setText(tpl)
+                    input.setSelection(tpl.length)
+                    toast("Шаблон вставлен")
+                } else {
+                    toast("Шаблон пока не сохранён.\nНапишите уроки и нажмите «Сохранить шаблон»")
+                }
+            }
+        }
+
+        val btnSaveTemplate = Button(this).apply {
+            text = "Сохранить шаблон"
+            isAllCaps = false
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(4), 0, 0, 0)
+            }
+            setOnClickListener {
+                val current = input.text.toString().trim()
+                if (current.isNotEmpty()) {
+                    SchoolData.saveTemplate(this@MainActivity, dow, current)
+                    toast("Шаблон для $dowName сохранён!")
+                } else {
+                    toast("Сначала введите уроки")
+                }
+            }
+        }
+
+        templateBar.addView(btnInsertTemplate)
+        templateBar.addView(btnSaveTemplate)
+        container.addView(templateBar)
 
         AlertDialog.Builder(this)
             .setTitle("$dowName — уроки")
-            .setView(input)
+            .setView(container)
             .setPositiveButton("Сохранить") { _, _ ->
                 val text = input.text.toString()
                 if (text.isBlank()) {
@@ -652,25 +735,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun editSource() {
-        val input = EditText(this)
-        input.setText(SchoolSettings.baseUrl(this))
-        AlertDialog.Builder(this)
-            .setTitle("Адрес файлов расписания")
-            .setView(input)
-            .setPositiveButton("Сохранить") { _, _ ->
-                SchoolSettings.setBaseUrl(this, input.text.toString().trim())
-                render()
-            }
-            .setNeutralButton("По умолчанию") { _, _ ->
-                SchoolSettings.setBaseUrl(this, SchoolSettings.DEFAULT_BASE_URL)
-                render()
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    // ================= вкладка «Сон» =================
+    // ================= вкладка «Сон» (НЕ ТРОГАЛИ) =================
 
     private fun buildSleepTab(col: LinearLayout) {
         col.addView(tv("Сон", 26f, true))

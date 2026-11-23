@@ -52,7 +52,6 @@ object SchoolNotifier {
 
         when (ev.type) {
             EvType.PRE -> {
-                // За 15 минут до 1-го урока
                 title = "Первый урок в ${SchoolData.hm(l.start)}"
                 text = "Урок ${l.n}: ${l.subject}" +
                     if (l.room.isNotEmpty()) ", каб. ${l.room}" else ""
@@ -60,7 +59,6 @@ object SchoolNotifier {
                 id = ID_BREAK
             }
             EvType.START -> {
-                // Тихое уведомление о начале урока
                 title = "Урок ${l.n}: ${l.subject}"
                 text = (if (l.room.isEmpty()) "" else "Кабинет ${l.room} · ") + "до ${SchoolData.hm(l.end)}"
                 channel = CH_LESSON
@@ -69,13 +67,11 @@ object SchoolNotifier {
             EvType.END -> {
                 val next = ev.next
                 if (next == null) {
-                    // Уроки закончились
                     title = "Уроки закончились!"
                     text = "На сегодня всё. Звук возвращён."
                     channel = CH_BREAK
                     id = ID_BREAK
                 } else {
-                    // Перемена: какой следующий урок, сколько длится перемена, во сколько звонок
                     val breakMinutes = ((next.start - l.end) / 60_000L).toInt()
                     title = "Перемена $breakMinutes мин — звонок в ${SchoolData.hm(next.start)}"
                     text = "Следующий — урок ${next.n}: ${next.subject}" +
@@ -85,6 +81,10 @@ object SchoolNotifier {
                 }
             }
         }
+
+        // Во время уроков и перемен делаем уведомление постоянным (ongoing),
+        // чтобы Android не выгружал приложение из памяти. После конца дня — снимаем фиксацию.
+        val isOngoing = ev.type == EvType.START || (ev.type == EvType.END && ev.next != null)
 
         val open = PendingIntent.getActivity(
             ctx, 3, Intent(ctx, MainActivity::class.java),
@@ -96,10 +96,15 @@ object SchoolNotifier {
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(open)
-            .setAutoCancel(true)
+            .setOngoing(isOngoing)
+            .setAutoCancel(!isOngoing)
             .build()
         try {
-            ctx.getSystemService(NotificationManager::class.java).notify(id, n)
+            val nm = ctx.getSystemService(NotificationManager::class.java)
+            nm.notify(id, n)
+            if (ev.type == EvType.END && ev.next == null) {
+                nm.cancel(ID_LESSON)
+            }
         } catch (e: Exception) {
         }
     }
