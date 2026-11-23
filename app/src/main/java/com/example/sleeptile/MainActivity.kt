@@ -2,8 +2,8 @@ package com.example.sleeptile
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlarmManager
 import android.app.AlertDialog
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.app.StatusBarManager
 import android.app.TimePickerDialog
@@ -292,14 +292,9 @@ class MainActivity : Activity() {
             "Главный выключатель: пока он выключен, уведомления, звук и обои не работают",
             SchoolSettings.enabled(this)
         ) { on ->
-            if (on && SchoolSettings.klass(this).isEmpty()) {
-                toast("Сначала выберите класс")
-                render()
-            } else {
-                SchoolSettings.setEnabled(this, on)
-                if (on) ensureNotificationPermission()
-                onSchoolChanged()
-            }
+            SchoolSettings.setEnabled(this, on)
+            if (on) ensureNotificationPermission()
+            onSchoolChanged()
         }
         c1.addView(button("Моё расписание на ближайшие дни") {
             AlertDialog.Builder(this)
@@ -309,6 +304,26 @@ class MainActivity : Activity() {
                 .show()
         })
         col.addView(c1)
+
+        // ---------- Ввод расписания текстом ----------
+        val c2 = card("Расписание уроков",
+            "Введите список уроков простым текстом.\n" +
+            "Формат: «1. Алгебра - 206» (кабинет необязателен).\n" +
+            "Парсер принимает разные тире (-, –, —) и точку/скобку после номера.")
+
+        val dowNames = arrayOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
+        for (dow in 1..5) {
+            val saved = SchoolData.loadLocalLessonsForDow(this, dow)
+            val label = dowNames[dow - 1]
+            val info = if (saved != null && saved.isNotEmpty()) {
+                "$label (${saved.size} ур.)"
+            } else {
+                "$label — не задано"
+            }
+            c2.addView(button(info) { openTextEditor(dow, dowNames[dow - 1]) })
+        }
+        c2.addView(hint("Расписание по дню недели действует каждую неделю. Вводить каждый день заново не нужно."))
+        col.addView(c2)
 
         // ---------- Разрешения ----------
         val cp = card("Разрешения", "Там, где стоит ✗, нажмите «Выдать»")
@@ -345,22 +360,13 @@ class MainActivity : Activity() {
         toggleRow(c3, "Уведомления о парах", "Общий выключатель всех уведомлений ниже", sb("notify", true)) { on ->
             SchoolSettings.setB(this, "notify", on)
         }
-        toggleRow(c3, "Напоминание перед первым уроком", "Придёт до первого урока дня", sb("notify_pre", true)) { on ->
+        toggleRow(c3, "За 15 мин до первого урока", "Предмет и кабинет первого урока", sb("notify_pre", true)) { on ->
             SchoolSettings.setB(this, "notify_pre", on)
-        }
-        val preOptions = listOf(15, 30, 45, 60)
-        val preCurrent = preOptions.indexOf(si("pre_minutes", 30)).let { if (it < 0) 1 else it }
-        choiceRow(
-            c3, "За сколько напомнить", preOptions.map { "$it минут" }, preCurrent,
-            "${preOptions[preCurrent]} минут"
-        ) { which ->
-            SchoolSettings.setI(this, "pre_minutes", preOptions[which])
-            onSchoolChanged()
         }
         toggleRow(c3, "Когда начался урок", "Тихое уведомление: предмет, кабинет, до скольки", sb("notify_start", true)) { on ->
             SchoolSettings.setB(this, "notify_start", on)
         }
-        toggleRow(c3, "На перемене: какой урок дальше", "Предмет, кабинет и время начала", sb("notify_break", true)) { on ->
+        toggleRow(c3, "На перемене: какой урок дальше", "Предмет, кабинет, длина перемены и время звонка", sb("notify_break", true)) { on ->
             SchoolSettings.setB(this, "notify_break", on)
         }
         toggleRow(c3, "Когда уроки закончились", null, sb("notify_end", true)) { on ->
@@ -496,6 +502,52 @@ class MainActivity : Activity() {
         )
         cd.addView(hint("Проверка: через минуту начнётся «урок 1» (звук выключится), потом «перемена», потом «урок 2». Всё закончится за 5 минут."))
         col.addView(cd)
+    }
+
+    // ---------- Редактор расписания текстом ----------
+
+    private fun openTextEditor(dow: Int, dowName: String) {
+        val saved = SchoolData.loadLocalLessonsForDow(this, dow)
+        val existing = if (saved != null && saved.isNotEmpty()) {
+            saved.joinToString("\n") { (n, s, r) ->
+                if (r.isNotEmpty()) "$n. $s - $r" else "$n. $s"
+            }
+        } else ""
+
+        val input = EditText(this)
+        input.hint = "1. Алгебра - 206\n2. Русский язык - 316\n3. Физика"
+        input.minLines = 6
+        input.setText(existing)
+        input.textSize = 14f
+        input.setPadding(dp(16), dp(8), dp(16), dp(8))
+
+        AlertDialog.Builder(this)
+            .setTitle("$dowName — уроки")
+            .setView(input)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val text = input.text.toString()
+                if (text.isBlank()) {
+                    // Очистить
+                    SchoolData.saveLocalLessons(this, dow, emptyList())
+                    toast("$dowName: расписание очищено")
+                } else {
+                    val parsed = SchoolData.parseTextSchedule(text)
+                    if (parsed.isEmpty()) {
+                        toast("Не удалось распознать ни одного урока. Формат:\n1. Предмет - кабинет")
+                    } else {
+                        SchoolData.saveLocalLessons(this, dow, parsed)
+                        toast("$dowName: сохранено ${parsed.size} ур.")
+                    }
+                }
+                onSchoolChanged()
+            }
+            .setNeutralButton("Очистить") { _, _ ->
+                SchoolData.saveLocalLessons(this, dow, emptyList())
+                toast("$dowName: расписание очищено")
+                onSchoolChanged()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     private fun ensureNotificationPermission() {

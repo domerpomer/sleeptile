@@ -52,12 +52,15 @@ object SchoolNotifier {
 
         when (ev.type) {
             EvType.PRE -> {
-                title = "Первый урок сегодня в ${SchoolData.hm(l.start)}"
-                text = "${l.n}-й урок: ${SchoolData.describeLesson(l)}"
+                // За 15 минут до 1-го урока
+                title = "Первый урок в ${SchoolData.hm(l.start)}"
+                text = "Урок ${l.n}: ${l.subject}" +
+                    if (l.room.isNotEmpty()) ", каб. ${l.room}" else ""
                 channel = CH_BREAK
                 id = ID_BREAK
             }
             EvType.START -> {
+                // Тихое уведомление о начале урока
                 title = "Урок ${l.n}: ${l.subject}"
                 text = (if (l.room.isEmpty()) "" else "Кабинет ${l.room} · ") + "до ${SchoolData.hm(l.end)}"
                 channel = CH_LESSON
@@ -66,15 +69,20 @@ object SchoolNotifier {
             EvType.END -> {
                 val next = ev.next
                 if (next == null) {
-                    title = "Уроки на сегодня закончились"
-                    text = "Звук возвращён."
+                    // Уроки закончились
+                    title = "Уроки закончились!"
+                    text = "На сегодня всё. Звук возвращён."
+                    channel = CH_BREAK
+                    id = ID_BREAK
                 } else {
-                    val gap = next.n != l.n + 1
-                    title = (if (gap) "Окно до " else "Перемена до ") + SchoolData.hm(next.start)
-                    text = "Дальше — урок ${next.n}: ${SchoolData.describeLesson(next)}"
+                    // Перемена: какой следующий урок, сколько длится перемена, во сколько звонок
+                    val breakMinutes = ((next.start - l.end) / 60_000L).toInt()
+                    title = "Перемена $breakMinutes мин — звонок в ${SchoolData.hm(next.start)}"
+                    text = "Следующий — урок ${next.n}: ${next.subject}" +
+                        if (next.room.isNotEmpty()) ", каб. ${next.room}" else ""
+                    channel = CH_BREAK
+                    id = ID_BREAK
                 }
-                channel = CH_BREAK
-                id = ID_BREAK
             }
         }
 

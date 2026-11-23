@@ -39,7 +39,8 @@ object SchoolSettings {
     // ----- уведомления -----
     fun notify(ctx: Context): Boolean = b(ctx, "notify", true)
     fun notifyPre(ctx: Context): Boolean = b(ctx, "notify_pre", true)
-    fun preMinutes(ctx: Context): Int = i(ctx, "pre_minutes", 30)
+    /** Жёстко 15 минут до первого урока. */
+    fun preMinutes(ctx: Context): Int = 15
     fun notifyStart(ctx: Context): Boolean = b(ctx, "notify_start", true)
     fun notifyBreak(ctx: Context): Boolean = b(ctx, "notify_break", true)
     fun notifyEnd(ctx: Context): Boolean = b(ctx, "notify_end", true)
