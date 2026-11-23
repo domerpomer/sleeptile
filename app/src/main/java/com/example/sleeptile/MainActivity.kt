@@ -10,6 +10,7 @@ import android.app.TimePickerDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -45,7 +46,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        tab = getSharedPreferences("ui", MODE_PRIVATE).getInt("tab", 0)
+        tab = getSharedPreferences("ui", MODE_PRIVATE).getInt("tab", 0).coerceIn(0, 3)
     }
 
     override fun onResume() {
@@ -71,11 +72,13 @@ class MainActivity : Activity() {
         return t
     }
 
-    private fun button(s: String, onClick: () -> Unit): Button =
+    private fun button(s: String, enabled: Boolean = true, onClick: () -> Unit): Button =
         Button(this).apply {
             text = s
             isAllCaps = false
-            setOnClickListener { onClick() }
+            isEnabled = enabled
+            alpha = if (enabled) 1.0f else 0.4f
+            if (enabled) setOnClickListener { onClick() }
         }
 
     private fun toast(s: String) {
@@ -109,27 +112,37 @@ class MainActivity : Activity() {
     }
 
     private fun toggleRow(
-        parent: LinearLayout, title: String, hintText: String?, value: Boolean, onChange: (Boolean) -> Unit
-    ) {
+        parent: LinearLayout, title: String, hintText: String?, value: Boolean,
+        enabled: Boolean = true, onChange: (Boolean) -> Unit
+    ): Switch {
         val sw = Switch(this)
         sw.text = title
         sw.textSize = 16f
         sw.isChecked = value
+        sw.isEnabled = enabled
+        sw.alpha = if (enabled) 1.0f else 0.4f
         sw.setPadding(0, dp(10), 0, dp(2))
         sw.setOnCheckedChangeListener { _, on -> onChange(on) }
         parent.addView(sw)
-        if (hintText != null) parent.addView(hint(hintText))
+        if (hintText != null) {
+            val h = hint(hintText)
+            h.alpha = if (enabled) 1.0f else 0.4f
+            parent.addView(h)
+        }
+        return sw
     }
 
     private fun choiceRow(
         parent: LinearLayout, title: String, options: List<String>, current: Int,
-        valueText: String, onPick: (Int) -> Unit
-    ) {
+        valueText: String, enabled: Boolean = true, onPick: (Int) -> Unit
+    ): LinearLayout {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
         row.setPadding(0, dp(12), 0, dp(12))
-        row.background = selectableBg()
+        row.isEnabled = enabled
+        row.alpha = if (enabled) 1.0f else 0.4f
+        if (enabled) row.background = selectableBg()
 
         val t = TextView(this)
         t.text = title
@@ -138,36 +151,53 @@ class MainActivity : Activity() {
         val v = TextView(this)
         v.text = "$valueText  ›"
         v.textSize = 15f
-        v.setTextColor(0xFF7986CB.toInt())
+        v.setTextColor(if (enabled) 0xFF7986CB.toInt() else 0xFF888888.toInt())
         row.addView(t)
         row.addView(v)
 
-        row.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle(title)
-                .setSingleChoiceItems(options.toTypedArray(), current) { dialog, which ->
-                    dialog.dismiss()
-                    onPick(which)
-                }
-                .setNegativeButton("Отмена", null)
-                .show()
+        if (enabled) {
+            row.setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle(title)
+                    .setSingleChoiceItems(options.toTypedArray(), current) { dialog, which ->
+                        dialog.dismiss()
+                        onPick(which)
+                    }
+                    .setNegativeButton("Отмена", null)
+                    .show()
+            }
         }
         parent.addView(row)
+        return row
     }
 
-    private fun permissionRow(
-        parent: LinearLayout, ok: Boolean, text: String, actionLabel: String, action: () -> Unit
+    private fun permissionStatusRow(
+        parent: LinearLayout, ok: Boolean, title: String, hintText: String, actionLabel: String = "Выдать", action: () -> Unit
     ) {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(0, dp(6), 0, dp(6))
-        val t = TextView(this)
-        t.text = (if (ok) "✓ " else "✗ ") + text
-        t.textSize = 15f
-        t.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        row.addView(t)
-        if (!ok) {
+        row.setPadding(0, dp(10), 0, dp(10))
+
+        val textCol = LinearLayout(this)
+        textCol.orientation = LinearLayout.VERTICAL
+        textCol.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+
+        val t = tv(title, 16f, true)
+        val h = hint(hintText)
+        textCol.addView(t)
+        textCol.addView(h)
+        row.addView(textCol)
+
+        if (ok) {
+            val status = TextView(this)
+            status.text = "✓ Выдано"
+            status.textSize = 14f
+            status.setTypeface(status.typeface, Typeface.BOLD)
+            status.setTextColor(Color.parseColor("#4CAF50"))
+            status.setPadding(dp(8), dp(4), dp(8), dp(4))
+            row.addView(status)
+        } else {
             val b = Button(this)
             b.text = actionLabel
             b.isAllCaps = false
@@ -213,6 +243,7 @@ class MainActivity : Activity() {
         when (tab) {
             0 -> buildSchoolTab(col)
             1 -> buildSleepTab(col)
+            2 -> buildPermissionsTab(col)
             else -> buildLogTab(col)
         }
         root.addView(bottomBar())
@@ -229,7 +260,8 @@ class MainActivity : Activity() {
         bar.setBackgroundColor(0x22888888)
         bar.addView(tabButton(0, R.drawable.ic_book, "Школа"), tabParams())
         bar.addView(tabButton(1, R.drawable.ic_tile, "Сон"), tabParams())
-        bar.addView(tabButton(2, R.drawable.ic_list, "Журнал"), tabParams())
+        bar.addView(tabButton(2, R.drawable.ic_shield, "Разрешения"), tabParams())
+        bar.addView(tabButton(3, R.drawable.ic_list, "Журнал"), tabParams())
         return bar
     }
 
@@ -297,8 +329,9 @@ class MainActivity : Activity() {
             onSchoolChanged()
         }
         c1.addView(button("Моё расписание на ближайшие дни") {
+            val titleText = if (klass.isNotEmpty()) "Расписание $klass" else "Моё расписание"
             AlertDialog.Builder(this)
-                .setTitle("Расписание " + SchoolSettings.klass(this))
+                .setTitle(titleText)
                 .setMessage(SchoolData.describeUpcoming(this))
                 .setPositiveButton("OK", null)
                 .show()
@@ -309,7 +342,7 @@ class MainActivity : Activity() {
         val c2 = card("Расписание уроков",
             "Введите список уроков простым текстом.\n" +
             "Формат: «1. Алгебра - 206» (кабинет необязателен).\n" +
-            "Парсер принимает разные тире (-, –, —) и точку/скобку после номера.")
+            "Парсер принимает любые тире (-, –, —) и номер с точкой или скобкой.")
 
         val dowNames = arrayOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
         for (dow in 1..5) {
@@ -322,78 +355,52 @@ class MainActivity : Activity() {
             }
             c2.addView(button(info) { openTextEditor(dow, dowNames[dow - 1]) })
         }
-        c2.addView(hint("Расписание по дню недели действует каждую неделю. Вводить каждый день заново не нужно."))
+        c2.addView(hint("Расписание по дню недели повторяется каждую неделю. Вводить заново не нужно."))
         col.addView(c2)
 
-        // ---------- Разрешения ----------
-        val cp = card("Разрешения", "Там, где стоит ✗, нажмите «Выдать»")
-        val nm = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= 33) {
-            val ok = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            permissionRow(cp, ok, "Уведомления", "Выдать") { ensureNotificationPermission() }
-        }
-        permissionRow(
-            cp, nm.isNotificationPolicyAccessGranted,
-            "Доступ к «Не беспокоить» (нужен для беззвучного режима)", "Выдать"
-        ) { openSafely(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
-        if (Build.VERSION.SDK_INT >= 31) {
-            val am = getSystemService(AlarmManager::class.java)
-            permissionRow(cp, am.canScheduleExactAlarms(), "Точные будильники", "Выдать") {
-                openSafely(
-                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))
-                )
-            }
-        }
-        cp.addView(hint("Чтобы Origin OS не выгружала приложение: включите автозапуск и работу без ограничений батареи."))
-        cp.addView(button("Настройки приложения") {
-            openSafely(
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
-            )
-        })
-        cp.addView(button("Оптимизация батареи") {
-            openSafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-        })
-        col.addView(cp)
-
         // ---------- Уведомления ----------
+        val notifyMaster = sb("notify", true)
         val c3 = card("Уведомления")
-        toggleRow(c3, "Уведомления о парах", "Общий выключатель всех уведомлений ниже", sb("notify", true)) { on ->
+        toggleRow(c3, "Уведомления об уроках", "Главный выключатель всех уведомлений ниже", notifyMaster) { on ->
             SchoolSettings.setB(this, "notify", on)
+            render()
         }
-        toggleRow(c3, "За 15 мин до первого урока", "Предмет и кабинет первого урока", sb("notify_pre", true)) { on ->
+        toggleRow(c3, "За 15 мин до первого урока", "Предмет и кабинет первого урока", sb("notify_pre", true), notifyMaster) { on ->
             SchoolSettings.setB(this, "notify_pre", on)
         }
-        toggleRow(c3, "Когда начался урок", "Тихое уведомление: предмет, кабинет, до скольки", sb("notify_start", true)) { on ->
+        toggleRow(c3, "Когда начался урок", "Тихое уведомление: предмет, кабинет, до скольки", sb("notify_start", true), notifyMaster) { on ->
             SchoolSettings.setB(this, "notify_start", on)
         }
-        toggleRow(c3, "На перемене: какой урок дальше", "Предмет, кабинет, длина перемены и время звонка", sb("notify_break", true)) { on ->
+        toggleRow(c3, "На перемене: какой урок дальше", "Предмет, кабинет, длина перемены и время звонка", sb("notify_break", true), notifyMaster) { on ->
             SchoolSettings.setB(this, "notify_break", on)
         }
-        toggleRow(c3, "Когда уроки закончились", null, sb("notify_end", true)) { on ->
+        toggleRow(c3, "Когда уроки закончились", null, sb("notify_end", true), notifyMaster) { on ->
             SchoolSettings.setB(this, "notify_end", on)
         }
         col.addView(c3)
 
         // ---------- Звук ----------
+        val soundMaster = SchoolSettings.silent(this)
         val c4 = card("Звук на уроках")
         toggleRow(
             c4, "Менять звук на уроках",
             "На время урока звонок выключается, после урока возвращается как было",
-            SchoolSettings.silent(this)
+            soundMaster
         ) { on ->
             SchoolSettings.setSilent(this, on)
             onSchoolChanged()
         }
         val ringOptions = listOf("Беззвучный", "Вибрация")
         val ring = si("ring_mode", 0).coerceIn(0, 1)
-        choiceRow(c4, "Режим звонка на уроке", ringOptions, ring, ringOptions[ring]) { which ->
+        choiceRow(c4, "Режим звонка на уроке", ringOptions, ring, ringOptions[ring], soundMaster) { which ->
             SchoolSettings.setI(this, "ring_mode", which)
             onSchoolChanged()
         }
         toggleRow(
             c4, "«Не беспокоить» на уроках",
-            "Нужен доступ к режиму «Не беспокоить» (см. «Разрешения»)",
-            SchoolSettings.dnd(this)
+            "Нужен доступ к режиму «Не беспокоить» (см. вкладку «Разрешения»)",
+            SchoolSettings.dnd(this),
+            soundMaster
         ) { on ->
             SchoolSettings.setDnd(this, on)
             onSchoolChanged()
@@ -406,18 +413,19 @@ class MainActivity : Activity() {
             "Держать весь учебный день"
         )
         val gapCurrent = gapValues.indexOf(si("keep_gap", 0)).let { if (it < 0) 0 else it }
-        choiceRow(c4, "Звук на переменах", gapNames, gapCurrent, gapNames[gapCurrent]) { which ->
+        choiceRow(c4, "Звук на переменах", gapNames, gapCurrent, gapNames[gapCurrent], soundMaster) { which ->
             SchoolSettings.setI(this, "keep_gap", gapValues[which])
             onSchoolChanged()
         }
         col.addView(c4)
 
         // ---------- Обои ----------
-        val c5 = card("Обои экрана блокировки", "Приложение рисует расписание на день картинкой и ставит её на экран блокировки")
+        val wpMaster = sb("wp_enabled", false)
+        val c5 = card("Расписание на обоях", "Приложение рисует расписание на день картинкой и ставит на обои")
         toggleRow(
             c5, "Расписание на обоях",
-            "Когда выходит новое расписание, приложение предложит (или само поставит) обои",
-            sb("wp_enabled", false)
+            "Автоматически обновлять обои при выходе нового расписания",
+            wpMaster
         ) { on ->
             SchoolSettings.setB(this, "wp_enabled", on)
             if (on) ensureNotificationPermission()
@@ -425,36 +433,36 @@ class MainActivity : Activity() {
         }
         val modeNames = listOf("Спросить уведомлением", "Ставить сразу сами")
         val mode = si("wp_mode", 0).coerceIn(0, 1)
-        choiceRow(c5, "Как ставить", modeNames, mode, modeNames[mode]) { which ->
+        choiceRow(c5, "Как ставить", modeNames, mode, modeNames[mode], wpMaster) { which ->
             SchoolSettings.setI(this, "wp_mode", which)
         }
-        val targetNames = listOf("Экран блокировки", "Блокировка и главный экран")
-        val target = si("wp_target", 0).coerceIn(0, 1)
-        choiceRow(c5, "Куда ставить", targetNames, target, targetNames[target]) { which ->
+        val targetNames = listOf("Экран блокировки", "Рабочий стол", "Блокировка и рабочий стол")
+        val target = si("wp_target", 0).coerceIn(0, 2)
+        choiceRow(c5, "Куда ставить", targetNames, target, targetNames[target], wpMaster) { which ->
             SchoolSettings.setI(this, "wp_target", which)
         }
         val themeNames = listOf("Тёмный", "Светлый", "Синий")
         val theme = si("wp_theme", 0).coerceIn(0, 2)
-        choiceRow(c5, "Цвет", themeNames, theme, themeNames[theme]) { which ->
+        choiceRow(c5, "Цвет", themeNames, theme, themeNames[theme], wpMaster) { which ->
             SchoolSettings.setI(this, "wp_theme", which)
             render()
         }
         val sizeNames = listOf("Мелкий", "Средний", "Крупный")
         val size = si("wp_size", 1).coerceIn(0, 2)
-        choiceRow(c5, "Размер текста", sizeNames, size, sizeNames[size]) { which ->
+        choiceRow(c5, "Размер текста", sizeNames, size, sizeNames[size], wpMaster) { which ->
             SchoolSettings.setI(this, "wp_size", which)
             render()
         }
         val posNames = listOf("Ниже часов", "По центру", "Выше")
         val pos = si("wp_pos", 0).coerceIn(0, 2)
-        choiceRow(c5, "Положение текста", posNames, pos, posNames[pos]) { which ->
+        choiceRow(c5, "Положение текста", posNames, pos, posNames[pos], wpMaster) { which ->
             SchoolSettings.setI(this, "wp_pos", which)
             render()
         }
-        toggleRow(c5, "Показывать время уроков", null, sb("wp_times", true)) { on ->
+        toggleRow(c5, "Показывать время уроков", null, sb("wp_times", true), wpMaster) { on ->
             SchoolSettings.setB(this, "wp_times", on)
         }
-        toggleRow(c5, "Показывать кабинеты", null, sb("wp_rooms", true)) { on ->
+        toggleRow(c5, "Показывать кабинеты", null, sb("wp_rooms", true), wpMaster) { on ->
             SchoolSettings.setB(this, "wp_rooms", on)
         }
         c5.addView(button("Предпросмотр") { previewWallpaper() })
@@ -465,14 +473,13 @@ class MainActivity : Activity() {
                 runOnUiThread { toast(result) }
             }.start()
         })
-        c5.addView(button("Сбросить обои экрана блокировки") { toast(SchoolWallpaper.reset(this)) })
-        c5.addView(hint("Приложение заменяет текущие обои экрана блокировки. «Сбросить» возвращает обои по умолчанию."))
+        c5.addView(button("Сбросить обои") { toast(SchoolWallpaper.reset(this)) })
         col.addView(c5)
 
         // ---------- Данные ----------
         val cd = card("Данные расписания")
         val data = SchoolData.load(this)
-        val source = if (data.fromNetwork) "загружено из интернета" else "встроенный пример (12 и 16 ноября)"
+        val source = if (data.fromNetwork) "загружено из интернета" else "локальное / встроенное"
         cd.addView(tv("Источник: $source", 14f))
         val status = SchoolSettings.lastStatus(this)
         if (status.isNotEmpty()) cd.addView(hint(status))
@@ -504,6 +511,64 @@ class MainActivity : Activity() {
         col.addView(cd)
     }
 
+    // ================= вкладка «Разрешения» =================
+
+    private fun buildPermissionsTab(col: LinearLayout) {
+        col.addView(tv("Разрешения", 26f, true))
+        col.addView(hint("Разрешения для работы уведомлений, беззвучного режима и фоновой активности"))
+
+        val cp = card("Системные разрешения", "Для правильной работы предоставьте все разрешения ниже")
+        val nm = getSystemService(NotificationManager::class.java)
+
+        val notifOk = if (Build.VERSION.SDK_INT >= 33) {
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        permissionStatusRow(
+            cp, notifOk, "Уведомления",
+            "Напоминания перед уроками, информация о перемене и следующем кабинете"
+        ) { ensureNotificationPermission() }
+
+        val dndOk = nm.isNotificationPolicyAccessGranted
+        permissionStatusRow(
+            cp, dndOk, "Доступ к «Не беспокоить»",
+            "Требуется для отключения звука звонка во время урока"
+        ) { openSafely(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+
+        val alarmOk = if (Build.VERSION.SDK_INT >= 31) {
+            getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+        } else {
+            true
+        }
+        permissionStatusRow(
+            cp, alarmOk, "Точные будильники",
+            "Чтобы таймеры и смена уроков срабатывали ровно секунда в секунду"
+        ) {
+            if (Build.VERSION.SDK_INT >= 31) {
+                openSafely(
+                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))
+                )
+            }
+        }
+        col.addView(cp)
+
+        val cb = card("Фоновая активность и автозапуск", "Особенно важно на Origin OS, MIUI, HyperOS, OneUI")
+        cb.addView(tv("Чтобы система не усыпляла приложение:", 14f, true))
+        cb.addView(hint("1. Включите «Автозапуск» в настройках приложения."))
+        cb.addView(hint("2. В разделе «Батарея» выберите «Без ограничений»."))
+        cb.addView(hint("3. Зафиксируйте SleepTile в недавних приложениях (значок замочка)."))
+        cb.addView(button("Настройки приложения") {
+            openSafely(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            )
+        })
+        cb.addView(button("Оптимизация батареи") {
+            openSafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        })
+        col.addView(cb)
+    }
+
     // ---------- Редактор расписания текстом ----------
 
     private fun openTextEditor(dow: Int, dowName: String) {
@@ -527,13 +592,12 @@ class MainActivity : Activity() {
             .setPositiveButton("Сохранить") { _, _ ->
                 val text = input.text.toString()
                 if (text.isBlank()) {
-                    // Очистить
                     SchoolData.saveLocalLessons(this, dow, emptyList())
                     toast("$dowName: расписание очищено")
                 } else {
                     val parsed = SchoolData.parseTextSchedule(text)
                     if (parsed.isEmpty()) {
-                        toast("Не удалось распознать ни одного урока. Формат:\n1. Предмет - кабинет")
+                        toast("Не удалось распознать уроки. Формат:\n1. Предмет - кабинет")
                     } else {
                         SchoolData.saveLocalLessons(this, dow, parsed)
                         toast("$dowName: сохранено ${parsed.size} ур.")
@@ -566,9 +630,9 @@ class MainActivity : Activity() {
 
     private fun previewWallpaper() {
         val data = SchoolData.load(this)
-        val rel = SchoolData.relevantDay(this, data, System.currentTimeMillis())
+        val rel = SchoolData.anyRelevantDay(this, data)
         if (rel == null) {
-            toast("Нет расписания для выбранного класса. Выберите класс.")
+            toast("Нет уроков в расписании. Введите уроки на вкладке «Школа» выше.")
             return
         }
         val bmp = SchoolWallpaper.render(this, rel.first, rel.second)
@@ -582,7 +646,7 @@ class MainActivity : Activity() {
         box.setPadding(dp(8), dp(8), dp(8), dp(8))
         box.addView(img)
         AlertDialog.Builder(this)
-            .setTitle("Предпросмотр обоев")
+            .setTitle("Предпросмотр: " + SchoolData.dayTitle(rel.first))
             .setView(box)
             .setPositiveButton("OK", null)
             .show()

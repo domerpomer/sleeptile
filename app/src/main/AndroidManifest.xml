@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Загрузка расписания из интернета -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Уведомления о парах (Android 13+) -->
+    <!-- Уведомления об уроках (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Обои экрана блокировки с расписанием -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />

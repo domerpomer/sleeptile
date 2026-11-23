@@ -25,8 +25,10 @@ object SchoolScheduler {
     private val DND_RULE = Rule(900002, RuleAction.DND, 0, -1, ALL_DAYS, true)
     private val VIBRATE_RULE = Rule(900003, RuleAction.VIBRATE, 0, -1, ALL_DAYS, true)
 
+    /** Активен, если школьный режим включён (есть класс ИЛИ введены локальные уроки), или идёт тест. */
     fun isActive(ctx: Context): Boolean =
-        (SchoolSettings.enabled(ctx) && SchoolSettings.klass(ctx).isNotEmpty()) || SchoolData.testActive(ctx)
+        (SchoolSettings.enabled(ctx) && (SchoolSettings.klass(ctx).isNotEmpty() || SchoolData.hasAnyLocalLessons(ctx))) ||
+            SchoolData.testActive(ctx)
 
     private fun alarmPi(ctx: Context): PendingIntent =
         PendingIntent.getBroadcast(
@@ -47,7 +49,6 @@ object SchoolScheduler {
         if (isActive(ctx)) SchoolWallpaper.autoCheck(ctx, data, now)
         reschedule(ctx, data, now)
         ensureJob(ctx)
-        if (isActive(ctx) && now - SchoolSettings.lastFetchAt(ctx) > 10 * 60_000L) fetchSoon(ctx)
     }
 
     /** Беззвучный режим (или вибрация) и «Не беспокоить» — только пока идёт урок. */
@@ -114,19 +115,8 @@ object SchoolScheduler {
     private fun ensureJob(ctx: Context) {
         val js = ctx.getSystemService(JobScheduler::class.java)
         try {
-            if (isActive(ctx)) {
-                if (js.getPendingJob(JOB_PERIODIC) == null) {
-                    js.schedule(
-                        JobInfo.Builder(JOB_PERIODIC, ComponentName(ctx, FetchJobService::class.java))
-                            .setPeriodic(15 * 60_000L)
-                            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                            .setPersisted(true)
-                            .build()
-                    )
-                }
-            } else {
-                js.cancel(JOB_PERIODIC)
-            }
+            // Отменяем фоновый опрос сети: приложение просыпается только по точным будильникам AlarmManager
+            js.cancel(JOB_PERIODIC)
         } catch (e: Exception) {
         }
     }

@@ -21,7 +21,7 @@ import android.text.TextUtils
 import java.time.LocalDate
 
 /**
- * Рисует расписание на день как картинку и ставит её обоями экрана блокировки.
+ * Рисует расписание на день как картинку и ставит её на обои (экран блокировки / рабочий стол / оба).
  * Картинка собирается из данных расписания, поэтому фото для этого не нужно.
  */
 object SchoolWallpaper {
@@ -35,8 +35,19 @@ object SchoolWallpaper {
 
     fun render(ctx: Context, date: LocalDate, lessons: List<ResolvedLesson>): Bitmap {
         val dm = ctx.resources.displayMetrics
-        val w = dm.widthPixels
-        val h = dm.heightPixels
+        var w = dm.widthPixels
+        var h = dm.heightPixels
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val wm = ctx.getSystemService(android.view.WindowManager::class.java)
+                val bounds = wm.currentWindowMetrics.bounds
+                if (bounds.width() > 0 && bounds.height() > 0) {
+                    w = bounds.width()
+                    h = bounds.height()
+                }
+            } catch (e: Exception) {
+            }
+        }
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
 
@@ -80,8 +91,9 @@ object SchoolWallpaper {
         val room = h * 0.94f - top
         if (need > room) base *= room / need
 
-        // заголовок
-        val title = SchoolData.dayTitle(date) + " · " + SchoolSettings.klass(ctx)
+        // заголовок: день + класс (если выбран)
+        val klassStr = SchoolSettings.klass(ctx)
+        val title = SchoolData.dayTitle(date) + if (klassStr.isNotEmpty()) " · $klassStr" else ""
         paint.typeface = Typeface.DEFAULT_BOLD
         paint.color = sub
         paint.textSize = base * 1.1f
@@ -143,11 +155,11 @@ object SchoolWallpaper {
         return try {
             val wm = WallpaperManager.getInstance(ctx)
             if (Build.VERSION.SDK_INT >= 24) {
-                val both = SchoolSettings.i(ctx, "wp_target", 0) == 1
-                val flags = if (both) {
-                    WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM
-                } else {
-                    WallpaperManager.FLAG_LOCK
+                val target = SchoolSettings.i(ctx, "wp_target", 0)
+                val flags = when (target) {
+                    1 -> WallpaperManager.FLAG_SYSTEM
+                    2 -> WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM
+                    else -> WallpaperManager.FLAG_LOCK
                 }
                 wm.setBitmap(bmp, null, true, flags)
             } else {
@@ -162,8 +174,10 @@ object SchoolWallpaper {
     /** Ставит обои прямо сейчас. Возвращает короткий итог для экрана. */
     fun applyNow(ctx: Context): String {
         val data = SchoolData.load(ctx)
-        val rel = SchoolData.relevantDay(ctx, data, System.currentTimeMillis())
-            ?: return "Нет расписания для выбранного класса"
+        val rel = SchoolData.anyRelevantDay(ctx, data)
+        if (rel == null) {
+            return "Нет уроков в расписании. Введите уроки на вкладке «Школа»."
+        }
         val ok = applyBitmap(ctx, render(ctx, rel.first, rel.second))
         return if (ok) {
             SchoolSettings.setS(ctx, "wp_last_sig", signature(ctx, rel.first, rel.second))
@@ -177,10 +191,18 @@ object SchoolWallpaper {
     fun reset(ctx: Context): String {
         return try {
             if (Build.VERSION.SDK_INT >= 24) {
-                WallpaperManager.getInstance(ctx).clear(WallpaperManager.FLAG_LOCK)
+                val target = SchoolSettings.i(ctx, "wp_target", 0)
+                val flags = when (target) {
+                    1 -> WallpaperManager.FLAG_SYSTEM
+                    2 -> WallpaperManager.FLAG_LOCK or WallpaperManager.FLAG_SYSTEM
+                    else -> WallpaperManager.FLAG_LOCK
+                }
+                WallpaperManager.getInstance(ctx).clear(flags)
+            } else {
+                WallpaperManager.getInstance(ctx).clear()
             }
             SchoolSettings.setS(ctx, "wp_last_sig", "")
-            "Обои экрана блокировки сброшены"
+            "Обои сброшены"
         } catch (e: Exception) {
             "Не удалось сбросить обои"
         }
@@ -228,7 +250,7 @@ object SchoolWallpaper {
         val n = Notification.Builder(ctx, CH)
             .setSmallIcon(R.drawable.ic_tile)
             .setContentTitle("Новое расписание: " + SchoolData.dayTitle(date))
-            .setContentText("Поставить его на экран блокировки?")
+            .setContentText("Поставить его на обои?")
             .addAction(action)
             .setContentIntent(open)
             .setAutoCancel(true)

@@ -138,6 +138,18 @@ object SchoolData {
         }
     }
 
+    /** Есть ли хотя бы один день недели с введёнными уроками. */
+    fun hasAnyLocalLessons(ctx: Context): Boolean {
+        val p = lessonPrefs(ctx)
+        for (dow in 1..7) {
+            val json = p.getString("dow_$dow", null) ?: continue
+            try {
+                if (JSONArray(json).length() > 0) return true
+            } catch (e: Exception) { }
+        }
+        return false
+    }
+
     /** Загружает сохранённые уроки для дня недели (для показа в редакторе). */
     fun loadLocalLessonsForDow(ctx: Context, dow: Int): List<Triple<Int, String, String>>? {
         val json = lessonPrefs(ctx).getString("dow_$dow", null) ?: return null
@@ -278,6 +290,32 @@ object SchoolData {
             if (ls.isEmpty()) continue
             if (d == 0 && now >= ls[ls.size - 1].end) continue
             return Pair(date, ls)
+        }
+        return null
+    }
+
+    /** Любой актуальный день с уроками (для обоев и предпросмотра): ищет сегодня, завтра или любой день с уроками. */
+    fun anyRelevantDay(ctx: Context, data: SchoolDataSet): Pair<LocalDate, List<ResolvedLesson>>? {
+        val rel = relevantDay(ctx, data, System.currentTimeMillis())
+        if (rel != null) return rel
+
+        val today = LocalDate.now()
+        val todayLessons = lessonsForDay(ctx, data, today)
+        if (todayLessons.isNotEmpty()) {
+            return Pair(today, todayLessons)
+        }
+
+        for (dow in 1..7) {
+            val local = loadLocalLessonsForDow(ctx, dow)
+            if (local != null && local.isNotEmpty()) {
+                for (offset in 0..7) {
+                    val candidate = today.plusDays(offset.toLong())
+                    if (candidate.dayOfWeek.value == dow) {
+                        val resolved = localToResolved(local, candidate)
+                        if (resolved.isNotEmpty()) return Pair(candidate, resolved)
+                    }
+                }
+            }
         }
         return null
     }
