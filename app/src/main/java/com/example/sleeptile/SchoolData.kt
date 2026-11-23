@@ -13,7 +13,7 @@ import java.util.Locale
 
 class SchoolDataSet(val schedule: JSONObject?, val bells: JSONObject?, val fromNetwork: Boolean)
 
-/** Чтение расписания и звонков, парсинг текстового ввода, заготовки (шаблоны). */
+/** Чтение расписания и звонков, парсинг текстового ввода, заготовки, смещение звонков. */
 object SchoolData {
     const val FILE_SCHEDULE = "school_schedule.json"
     const val FILE_BELLS = "school_bells.json"
@@ -22,7 +22,7 @@ object SchoolData {
         "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"
     )
 
-    // ========== ЖЁСТКО ЗАШИТОЕ РАСПИСАНИЕ ЗВОНКОВ ==========
+    // ========== СТАНДАРТНОЕ РАСПИСАНИЕ ЗВОНКОВ ==========
 
     private val BELLS_MON: Map<Int, Pair<Int, Int>> = mapOf(
         1  to Pair(8*60+0,  8*60+30),
@@ -58,6 +58,100 @@ object SchoolData {
         }
     }
 
+    /** Возвращает звонки на день с учетом временных смещений на конкретную дату. */
+    fun bellsForDate(ctx: Context, date: LocalDate): Map<Int, Pair<Int, Int>> {
+        val customDate = SchoolSettings.customBellsDate(ctx)
+        if (customDate == date.toString()) {
+            val json = SchoolSettings.customBellsJson(ctx)
+            val custom = parseBellsJson(json)
+            if (custom.isNotEmpty()) return custom
+        }
+        return bellsFor(date.dayOfWeek)
+    }
+
+    private fun parseBellsJson(json: String): Map<Int, Pair<Int, Int>> {
+        val out = LinkedHashMap<Int, Pair<Int, Int>>()
+        try {
+            val arr = JSONArray(json)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out[o.getInt("n")] = Pair(o.getInt("s"), o.getInt("e"))
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    fun bellsToJson(map: Map<Int, Pair<Int, Int>>): String {
+        val arr = JSONArray()
+        for ((n, pair) in map) {
+            arr.put(JSONObject().put("n", n).put("s", pair.first).put("e", pair.second))
+        }
+        return arr.toString()
+    }
+
+    // ========== ПАРСИНГ ТАБЛИЦ ЗВОНКОВ И ГЕНЕРАТОР ==========
+
+    /** Парсит вставку из Word / Telegram вида: «1 9.30 10.05 10» или «9:30 - 10:05». */
+    fun parseCustomBellsTable(text: String): Map<Int, Pair<Int, Int>> {
+        val result = LinkedHashMap<Int, Pair<Int, Int>>()
+        val timeRegex = Regex("""\b(\d{1,2})[.:](\d{2})\b""")
+        var autoNum = 1
+        for (line in text.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) continue
+            val times = timeRegex.findAll(trimmed).toList()
+            if (times.size >= 2) {
+                val h1 = times[0].groupValues[1].toInt()
+                val m1 = times[0].groupValues[2].toInt()
+                val h2 = times[1].groupValues[1].toInt()
+                val m2 = times[1].groupValues[2].toInt()
+                if (h1 in 5..23 && m1 in 0..59 && h2 in 5..23 && m2 in 0..59) {
+                    val s = h1 * 60 + m1
+                    val e = h2 * 60 + m2
+                    if (e > s) {
+                        val leadNum = Regex("""^(\d{1,2})\b""").find(trimmed)?.groupValues?.get(1)?.toIntOrNull()
+                        val num = leadNum ?: autoNum
+                        result[num] = Pair(s, e)
+                        autoNum = maxOf(autoNum + 1, num + 1)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /** Быстрый генератор звонков по началу 1-го урока, длине урока и переменам. */
+    fun generateBells(startHhMm: String, durationMin: Int, breaks: List<Int>, lessonCount: Int = 8): Map<Int, Pair<Int, Int>> {
+        val result = LinkedHashMap<Int, Pair<Int, Int>>()
+        val parts = startHhMm.trim().replace('.', ':').split(':')
+        if (parts.size < 2) return emptyMap()
+        val h = parts[0].toIntOrNull() ?: return emptyMap()
+        val m = parts[1].toIntOrNull() ?: return emptyMap()
+        var current = h * 60 + m
+
+        for (i in 1..lessonCount) {
+            val end = current + durationMin
+            result[i] = Pair(current, end)
+            val br = if (i - 1 < breaks.size) breaks[i - 1] else 10
+            current = end + br
+        }
+        return result
+    }
+
+    // ========== ОПРЕДЕЛЕНИЕ «ОКОН» И РЕАЛЬНЫХ УРОКОВ ==========
+
+    /** Проверяет, является ли урок настоящим, а не окном/прочерком («1. -», «нет», «окно»). */
+    fun isRealSubject(subject: String): Boolean {
+        val clean = subject.trim().lowercase(Locale.ROOT)
+        if (clean.isEmpty()) return false
+        if (clean == "-" || clean == "—" || clean == "–" || clean == "нет" || clean == "окно" || clean == "прочерк" || clean == "отмена") return false
+        if (clean.all { it == '-' || it == '—' || it == '–' || it.isWhitespace() }) return false
+        return true
+    }
+
+    // ========== ЗАГРУЗКА И ХРАНЕНИЕ ==========
+
     private fun readLocal(ctx: Context, name: String): String? {
         return try {
             val f = File(ctx.filesDir, name)
@@ -89,8 +183,6 @@ object SchoolData {
         val schedule = parse(s) ?: parse(readAsset(ctx, "schedule.json"))
         return SchoolDataSet(schedule, null, false)
     }
-
-    // ========== ЛОКАЛЬНОЕ РАСПИСАНИЕ УРОКОВ (ввод текстом) ==========
 
     private const val PREF_LESSONS = "local_lessons"
     private const val PREF_TEMPLATES = "schedule_templates"
@@ -167,7 +259,7 @@ object SchoolData {
     fun hasTemplate(ctx: Context, dow: Int): Boolean =
         !templatePrefs(ctx).getString("template_$dow", "").isNullOrBlank()
 
-    // ========== ПАРСИНГ ТЕКСТОВОГО ВВОДА ==========
+    // ========== ПАРСИНГ ТЕКСТОВОГО ВВОДА РАСПИСАНИЯ ==========
 
     fun parseTextSchedule(text: String): List<Triple<Int, String, String>> {
         val result = ArrayList<Triple<Int, String, String>>()
@@ -188,7 +280,6 @@ object SchoolData {
         return result
     }
 
-    /** Умный импорт целого расписания из .txt текста с разбивкой по дням недели. */
     fun importFullSchedule(ctx: Context, fullText: String): Int {
         val lines = fullText.lines()
         var currentDow = 0
@@ -241,18 +332,21 @@ object SchoolData {
         date.atTime(minutes / 60, minutes % 60).atZone(zone).toInstant().toEpochMilli()
 
     fun lessonsForDay(ctx: Context, data: SchoolDataSet, date: LocalDate): List<ResolvedLesson> {
+        // Если на этот день объявлен «КОД КРАСНЫЙ / отмена уроков» — уроков нет!
+        if (SchoolSettings.canceledDate(ctx) == date.toString()) return emptyList()
+
         val test = testLessons(ctx, date)
         if (test != null) return test
 
         val local = loadLocalLessons(ctx, date)
         if (local != null && local.isNotEmpty()) {
-            return localToResolved(local, date)
+            return localToResolved(ctx, local, date)
         }
         return emptyList()
     }
 
-    private fun localToResolved(lessons: List<Triple<Int, String, String>>, date: LocalDate): List<ResolvedLesson> {
-        val bells = bellsFor(date.dayOfWeek)
+    private fun localToResolved(ctx: Context, lessons: List<Triple<Int, String, String>>, date: LocalDate): List<ResolvedLesson> {
+        val bells = bellsForDate(ctx, date)
         if (bells.isEmpty()) return emptyList()
         val zone = ZoneId.systemDefault()
         val out = ArrayList<ResolvedLesson>()
@@ -264,8 +358,11 @@ object SchoolData {
         return out
     }
 
+    /** События дня только для РЕАЛЬНЫХ уроков (окна/прочерки не будят и не глушат звук). */
     fun eventsForDay(ctx: Context, data: SchoolDataSet, date: LocalDate): List<SchoolEvent> {
-        val ls = lessonsForDay(ctx, data, date)
+        val all = lessonsForDay(ctx, data, date)
+        // Фильтруем только настоящие уроки
+        val ls = all.filter { isRealSubject(it.subject) }
         val out = ArrayList<SchoolEvent>()
         for (i in ls.indices) {
             val l = ls[i]
@@ -305,7 +402,7 @@ object SchoolData {
                 for (offset in 0..7) {
                     val candidate = today.plusDays(offset.toLong())
                     if (candidate.dayOfWeek.value == dow) {
-                        val resolved = localToResolved(local, candidate)
+                        val resolved = localToResolved(ctx, local, candidate)
                         if (resolved.isNotEmpty()) return Pair(candidate, resolved)
                     }
                 }
@@ -314,9 +411,11 @@ object SchoolData {
         return null
     }
 
+    /** Промежутки «тишины»: звук выключается только на реальных уроках, в окнах — включается. */
     fun windows(lessons: List<ResolvedLesson>, keepGapMin: Int): List<LongArray> {
+        val realLessons = lessons.filter { isRealSubject(it.subject) }
         val out = ArrayList<LongArray>()
-        for (l in lessons) {
+        for (l in realLessons) {
             val last = if (out.isEmpty()) null else out[out.size - 1]
             if (last != null && l.start - last[1] <= keepGapMin * 60_000L) {
                 last[1] = l.end

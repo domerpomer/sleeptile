@@ -36,6 +36,7 @@ import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
 
@@ -69,7 +70,7 @@ class MainActivity : Activity() {
                         toast("Импортировано дней: $count")
                         onSchoolChanged()
                     } else {
-                        toast("Не удалось распознать дни недели.\nПример формата в файле:\nПонедельник:\n1. Алгебра - 206")
+                        toast("Не удалось распознать дни недели.\nФормат:\nПонедельник:\n1. Алгебра - 206")
                     }
                 }
             } catch (e: Exception) {
@@ -78,7 +79,7 @@ class MainActivity : Activity() {
         }
     }
 
-    // ================= помощники для интерфейса =================
+    // ================= помощники для интерфейса (Dark Glassmorphism) =================
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -86,22 +87,61 @@ class MainActivity : Activity() {
         TextView(this).apply {
             text = s
             textSize = size
+            setTextColor(Color.parseColor("#E6EDF3"))
             if (bold) setTypeface(typeface, Typeface.BOLD)
             setPadding(0, dp(4), 0, dp(4))
         }
 
     private fun hint(s: String): TextView {
         val t = tv(s, 13f)
-        t.setTextColor(0xFF888888.toInt())
+        t.setTextColor(Color.parseColor("#8B949E"))
         return t
     }
 
-    private fun button(s: String, enabled: Boolean = true, onClick: () -> Unit): Button =
+    private fun button(
+        s: String,
+        enabled: Boolean = true,
+        style: String = "normal", // normal, primary, danger
+        onClick: () -> Unit
+    ): Button =
         Button(this).apply {
             text = s
             isAllCaps = false
+            textSize = 14f
             isEnabled = enabled
             alpha = if (enabled) 1.0f else 0.4f
+
+            val bg = GradientDrawable().apply {
+                when (style) {
+                    "primary" -> {
+                        setColor(Color.parseColor("#5E6AD2"))
+                    }
+                    "danger" -> {
+                        setColor(Color.parseColor("#3D1E24"))
+                        setStroke(dp(1), Color.parseColor("#8E2A36"))
+                    }
+                    else -> {
+                        setColor(Color.parseColor("#1E2633"))
+                        setStroke(dp(1), Color.parseColor("#2E3A4E"))
+                    }
+                }
+                cornerRadius = dp(14).toFloat()
+            }
+            background = bg
+            setTextColor(
+                when (style) {
+                    "primary" -> Color.WHITE
+                    "danger" -> Color.parseColor("#FF7B72")
+                    else -> Color.parseColor("#E0E6ED")
+                }
+            )
+            setPadding(dp(16), dp(11), dp(16), dp(11))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, dp(5), 0, dp(5))
+            }
+            layoutParams = lp
             if (enabled) setOnClickListener { onClick() }
         }
 
@@ -116,19 +156,21 @@ class MainActivity : Activity() {
         return d
     }
 
-    /** Карточка-раздел с полупрозрачным фоном (хорошо выглядит и в тёмной, и в светлой теме). */
+    /** Карточка-раздел Dark Glassmorphism. */
     private fun card(title: String?, subtitle: String? = null): LinearLayout {
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(16), dp(12), dp(16), dp(12))
-        val bg = GradientDrawable()
-        bg.setColor(0x1F888888)
-        bg.cornerRadius = dp(16).toFloat()
+        c.setPadding(dp(18), dp(16), dp(18), dp(16))
+        val bg = GradientDrawable().apply {
+            setColor(Color.parseColor("#161C26"))
+            cornerRadius = dp(20).toFloat()
+            setStroke(dp(1), Color.parseColor("#263042"))
+        }
         c.background = bg
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        lp.setMargins(0, dp(6), 0, dp(6))
+        lp.setMargins(0, dp(7), 0, dp(7))
         c.layoutParams = lp
         if (title != null) c.addView(tv(title, 18f, true))
         if (subtitle != null) c.addView(hint(subtitle))
@@ -142,6 +184,7 @@ class MainActivity : Activity() {
         val sw = Switch(this)
         sw.text = title
         sw.textSize = 16f
+        sw.setTextColor(Color.parseColor("#E6EDF3"))
         sw.isChecked = value
         sw.isEnabled = enabled
         sw.alpha = if (enabled) 1.0f else 0.4f
@@ -171,11 +214,12 @@ class MainActivity : Activity() {
         val t = TextView(this)
         t.text = title
         t.textSize = 16f
+        t.setTextColor(Color.parseColor("#E6EDF3"))
         t.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         val v = TextView(this)
         v.text = "$valueText  ›"
         v.textSize = 15f
-        v.setTextColor(if (enabled) 0xFF7986CB.toInt() else 0xFF888888.toInt())
+        v.setTextColor(if (enabled) Color.parseColor("#7986CB") else Color.parseColor("#6E7681"))
         row.addView(t)
         row.addView(v)
 
@@ -222,10 +266,18 @@ class MainActivity : Activity() {
             status.setPadding(dp(8), dp(4), dp(8), dp(4))
             row.addView(status)
         } else {
-            val b = Button(this)
-            b.text = actionLabel
-            b.isAllCaps = false
-            b.setOnClickListener { action() }
+            val b = Button(this).apply {
+                text = actionLabel
+                isAllCaps = false
+                val bg = GradientDrawable().apply {
+                    setColor(Color.parseColor("#5E6AD2"))
+                    cornerRadius = dp(10).toFloat()
+                }
+                background = bg
+                setTextColor(Color.WHITE)
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                setOnClickListener { action() }
+            }
             row.addView(b)
         }
         parent.addView(row)
@@ -253,10 +305,10 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
+        root.setBackgroundColor(Color.parseColor("#0D1117"))
 
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        // Щедрый нижний отступ dp(100), чтобы нижние кнопки никогда не обрезались панелью навигации:
         col.setPadding(dp(14), dp(16), dp(14), dp(100))
 
         val scroll = ScrollView(this)
@@ -282,7 +334,7 @@ class MainActivity : Activity() {
     private fun bottomBar(): View {
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
-        bar.setBackgroundColor(0x22888888)
+        bar.setBackgroundColor(Color.parseColor("#121720"))
         bar.addView(tabButton(0, R.drawable.ic_book, "Школа"), tabParams())
         bar.addView(tabButton(1, R.drawable.ic_tile, "Сон"), tabParams())
         bar.addView(tabButton(2, R.drawable.ic_shield, "Разрешения"), tabParams())
@@ -294,7 +346,7 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
     private fun tabButton(index: Int, icon: Int, label: String): View {
-        val color = if (tab == index) 0xFF5C6BC0.toInt() else 0xFF888888.toInt()
+        val color = if (tab == index) Color.parseColor("#7381E8") else Color.parseColor("#6B7688")
         val item = LinearLayout(this)
         item.orientation = LinearLayout.VERTICAL
         item.gravity = Gravity.CENTER
@@ -327,7 +379,7 @@ class MainActivity : Activity() {
         col.addView(tv("Школьный режим", 26f, true))
         col.addView(hint("Расписание, звук и уведомления"))
 
-        // ---------- Главный выключатель ----------
+        // ---------- 1. Главный выключатель ----------
         val c1 = card("Школьный режим")
         toggleRow(
             c1, "Школьный режим",
@@ -338,7 +390,7 @@ class MainActivity : Activity() {
             if (on) ensureNotificationPermission()
             onSchoolChanged()
         }
-        c1.addView(button("Моё расписание на ближайшие дни") {
+        c1.addView(button("Моё расписание на ближайшие дни", style = "normal") {
             AlertDialog.Builder(this)
                 .setTitle("Моё расписание")
                 .setMessage(SchoolData.describeUpcoming(this))
@@ -347,26 +399,66 @@ class MainActivity : Activity() {
         })
         col.addView(c1)
 
-        // ---------- Расписание уроков ----------
+        // ---------- 2. Экстренное изменение дня (звонки / отмена) ----------
+        val cAlert = card("Изменения на день (звонки / отмена)", "Смещение звонков после тревог или отмена уроков на 1 день")
+        val todayStr = LocalDate.now().toString()
+        val tomorrowStr = LocalDate.now().plusDays(1).toString()
+        val canceled = SchoolSettings.canceledDate(this)
+        val customDate = SchoolSettings.customBellsDate(this)
+
+        if (canceled == todayStr || canceled == tomorrowStr) {
+            val label = if (canceled == todayStr) "сегодня ($todayStr)" else "завтра ($tomorrowStr)"
+            cAlert.addView(tv("⚠️ Уроки отменены на $label!", 15f, true).apply {
+                setTextColor(Color.parseColor("#FF7B72"))
+            })
+            cAlert.addView(button("Снять отмену уроков", style = "normal") {
+                SchoolSettings.setCanceledDate(this, "")
+                toast("Отмена снята, расписание снова активно")
+                onSchoolChanged()
+            })
+        } else {
+            cAlert.addView(button("🔴 КОД КРАСНЫЙ (Отмена уроков на день)", style = "danger") {
+                showCancelLessonsDialog()
+            })
+        }
+
+        if (customDate == todayStr || customDate == tomorrowStr) {
+            val label = if (customDate == todayStr) "сегодня ($todayStr)" else "завтра ($tomorrowStr)"
+            cAlert.addView(tv("⏰ Активно особое расписание звонков на $label", 14f).apply {
+                setTextColor(Color.parseColor("#7986CB"))
+            })
+            cAlert.addView(button("Сбросить особые звонки (вернуть стандарт)", style = "normal") {
+                SchoolSettings.clearCustomBells(this)
+                toast("Возвращены стандартные звонки")
+                onSchoolChanged()
+            })
+        } else {
+            cAlert.addView(button("⏰ Смещение звонков на 1 день", style = "primary") {
+                showCustomBellsDialog()
+            })
+        }
+        col.addView(cAlert)
+
+        // ---------- 3. Расписание уроков ----------
         val c2 = card("Расписание уроков")
         val dowNames = arrayOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
         for (dow in 1..5) {
             c2.addView(dayScheduleCard(dow, dowNames[dow - 1]))
             if (dow < 5) {
                 val divider = View(this).apply {
-                    setBackgroundColor(0x1F888888)
+                    setBackgroundColor(Color.parseColor("#212A3A"))
                     layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
-                        setMargins(dp(16), 0, dp(16), 0)
+                        setMargins(dp(8), 0, dp(8), 0)
                     }
                 }
                 c2.addView(divider)
             }
         }
-        c2.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)) })
-        c2.addView(button("Загрузить расписание из .txt файла") { pickTxtFile() })
+        c2.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)) })
+        c2.addView(button("Загрузить расписание из .txt файла", style = "normal") { pickTxtFile() })
         col.addView(c2)
 
-        // ---------- Уведомления ----------
+        // ---------- 4. Уведомления ----------
         val notifyMaster = sb("notify", true)
         val c3 = card("Уведомления")
         toggleRow(c3, "Уведомления об уроках", "Главный выключатель всех уведомлений ниже", notifyMaster) { on ->
@@ -387,7 +479,7 @@ class MainActivity : Activity() {
         }
         col.addView(c3)
 
-        // ---------- Звук ----------
+        // ---------- 5. Звук ----------
         val soundMaster = SchoolSettings.silent(this)
         val c4 = card("Звук на уроках")
         toggleRow(
@@ -427,7 +519,7 @@ class MainActivity : Activity() {
         }
         col.addView(c4)
 
-        // ---------- Обои ----------
+        // ---------- 6. Обои ----------
         val wpMaster = sb("wp_enabled", false)
         val c5 = card("Расписание на обоях", "Приложение рисует расписание на день картинкой и ставит на обои")
         toggleRow(
@@ -439,6 +531,21 @@ class MainActivity : Activity() {
             if (on) ensureNotificationPermission()
             onSchoolChanged()
         }
+
+        // Выбор питания
+        val mealOptions = listOf("Ничего", "Только завтрак", "Только обед", "Завтрак и обед")
+        val mealCurrent = SchoolSettings.mealPlan(this).coerceIn(0, 3)
+        choiceRow(c5, "Питание на обоях", mealOptions, mealCurrent, mealOptions[mealCurrent], wpMaster) { which ->
+            SchoolSettings.setMealPlan(this, which)
+            if (SchoolSettings.b(this, "wp_enabled", false)) {
+                Thread {
+                    val res = SchoolWallpaper.applyNow(applicationContext)
+                    runOnUiThread { toast(res) }
+                }.start()
+            }
+            render()
+        }
+
         val modeNames = listOf("Спросить уведомлением", "Ставить сразу сами")
         val mode = si("wp_mode", 0).coerceIn(0, 1)
         choiceRow(c5, "Как ставить", modeNames, mode, modeNames[mode], wpMaster) { which ->
@@ -473,15 +580,15 @@ class MainActivity : Activity() {
         toggleRow(c5, "Показывать кабинеты", null, sb("wp_rooms", true), wpMaster) { on ->
             SchoolSettings.setB(this, "wp_rooms", on)
         }
-        c5.addView(button("Предпросмотр") { previewWallpaper() })
-        c5.addView(button("Поставить обои сейчас") {
+        c5.addView(button("Предпросмотр", style = "normal") { previewWallpaper() })
+        c5.addView(button("Поставить обои сейчас", style = "primary") {
             val app = applicationContext
             Thread {
                 val result = SchoolWallpaper.applyNow(app)
                 runOnUiThread { toast(result) }
             }.start()
         })
-        c5.addView(button("Сбросить обои") { toast(SchoolWallpaper.reset(this)) })
+        c5.addView(button("Сбросить обои", style = "normal") { toast(SchoolWallpaper.reset(this)) })
         col.addView(c5)
     }
 
@@ -489,7 +596,7 @@ class MainActivity : Activity() {
         val saved = SchoolData.loadLocalLessonsForDow(this, dow)
         val row = LinearLayout(this)
         row.orientation = LinearLayout.VERTICAL
-        row.setPadding(0, dp(10), 0, dp(10))
+        row.setPadding(dp(4), dp(10), dp(4), dp(10))
         row.background = selectableBg()
 
         val titleRow = LinearLayout(this)
@@ -499,13 +606,14 @@ class MainActivity : Activity() {
         val title = TextView(this)
         title.text = dowName
         title.textSize = 16f
+        title.setTextColor(Color.parseColor("#E6EDF3"))
         title.setTypeface(title.typeface, Typeface.BOLD)
         title.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
         val count = TextView(this)
         count.text = if (saved.isNullOrEmpty()) "нет уроков ›" else "${saved.size} ур. ›"
         count.textSize = 14f
-        count.setTextColor(if (saved.isNullOrEmpty()) 0xFF888888.toInt() else 0xFF7986CB.toInt())
+        count.setTextColor(if (saved.isNullOrEmpty()) Color.parseColor("#8B949E") else Color.parseColor("#7986CB"))
 
         titleRow.addView(title)
         titleRow.addView(count)
@@ -514,10 +622,10 @@ class MainActivity : Activity() {
         val summary = TextView(this)
         if (!saved.isNullOrEmpty()) {
             summary.text = saved.joinToString(", ") { "${it.first}. ${it.second}" }
-            summary.setTextColor(0xFFCCCCCC.toInt())
+            summary.setTextColor(Color.parseColor("#C9D1D9"))
         } else {
             summary.text = "нажмите, чтобы задать уроки"
-            summary.setTextColor(0xFF777777.toInt())
+            summary.setTextColor(Color.parseColor("#6E7681"))
         }
         summary.textSize = 13f
         summary.setPadding(0, dp(4), 0, 0)
@@ -538,6 +646,106 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             toast("Не удалось открыть выбор файла")
         }
+    }
+
+    // ---------- Диалог «КОД КРАСНЫЙ (Отмена уроков)» ----------
+    private fun showCancelLessonsDialog() {
+        val today = LocalDate.now().toString()
+        val tomorrow = LocalDate.now().plusDays(1).toString()
+        val options = arrayOf("Сегодня ($today)", "Завтра ($tomorrow)")
+
+        AlertDialog.Builder(this)
+            .setTitle("КОД КРАСНЫЙ — отмена уроков")
+            .setItems(options) { _, which ->
+                val targetDate = if (which == 0) today else tomorrow
+                SchoolSettings.setCanceledDate(this, targetDate)
+                toast("Уроки на $targetDate отменены. Звук и звонки отключены.")
+                onSchoolChanged()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    // ---------- Диалог «Смещение звонков на 1 день» ----------
+    private fun showCustomBellsDialog() {
+        val today = LocalDate.now().toString()
+        val tomorrow = LocalDate.now().plusDays(1).toString()
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(4))
+        }
+
+        val dateSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Применить на СЕГОДНЯ ($today)", "Применить на ЗАВТРА ($tomorrow)")
+            )
+        }
+        box.addView(dateSpinner)
+
+        box.addView(tv("Способ 1: Вставить текст/таблицу из Word или чата", 14f, true).apply {
+            setPadding(0, dp(10), 0, dp(4))
+        })
+        val pasteInput = EditText(this).apply {
+            hint = "Вставьте строки звонков, например:\n1  9.30  10.05\n2 10.15 10.50"
+            minLines = 4
+            textSize = 13f
+        }
+        box.addView(pasteInput)
+
+        box.addView(tv("ИЛИ Способ 2: Быстрый расчет звонков", 14f, true).apply {
+            setPadding(0, dp(12), 0, dp(4))
+        })
+        val startInput = EditText(this).apply {
+            hint = "Начало 1-го урока (например: 09:30)"
+            setText("09:30")
+            textSize = 13f
+        }
+        val durationInput = EditText(this).apply {
+            hint = "Длительность урока в минутах (например: 35)"
+            setText("35")
+            textSize = 13f
+        }
+        val breaksInput = EditText(this).apply {
+            hint = "Перемены в мин через запятую"
+            setText("10, 10, 15, 15, 15, 10, 10")
+            textSize = 13f
+        }
+        box.addView(startInput)
+        box.addView(durationInput)
+        box.addView(breaksInput)
+
+        AlertDialog.Builder(this)
+            .setTitle("Особые звонки на 1 день")
+            .setView(box)
+            .setPositiveButton("Применить") { _, _ ->
+                val targetDate = if (dateSpinner.selectedItemPosition == 0) today else tomorrow
+                val pasted = pasteInput.text.toString().trim()
+
+                val bellsMap = if (pasted.isNotEmpty()) {
+                    SchoolData.parseCustomBellsTable(pasted)
+                } else {
+                    val sTime = startInput.text.toString().trim()
+                    val dur = durationInput.text.toString().trim().toIntOrNull() ?: 35
+                    val brList = breaksInput.text.toString().split(',').mapNotNull { it.trim().toIntOrNull() }
+                    SchoolData.generateBells(sTime, dur, brList)
+                }
+
+                if (bellsMap.isNotEmpty()) {
+                    SchoolSettings.setCustomBells(this, targetDate, SchoolData.bellsToJson(bellsMap))
+                    toast("Особые звонки установлены на $targetDate (${bellsMap.size} уроков)!")
+                    if (SchoolSettings.b(this, "wp_enabled", false)) {
+                        Thread { SchoolWallpaper.applyNow(applicationContext) }.start()
+                    }
+                    onSchoolChanged()
+                } else {
+                    toast("Не удалось рассчитать звонки. Проверьте формат времени!")
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     // ================= вкладка «Разрешения» =================
@@ -587,12 +795,12 @@ class MainActivity : Activity() {
         cb.addView(hint("1. Включите «Автозапуск» в настройках приложения."))
         cb.addView(hint("2. В разделе «Батарея» выберите «Без ограничений»."))
         cb.addView(hint("3. Зафиксируйте SleepTile в недавних приложениях (значок замочка)."))
-        cb.addView(button("Настройки приложения") {
+        cb.addView(button("Настройки приложения", style = "normal") {
             openSafely(
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
             )
         })
-        cb.addView(button("Оптимизация батареи") {
+        cb.addView(button("Оптимизация батареи", style = "normal") {
             openSafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         })
         col.addView(cb)
@@ -635,6 +843,13 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 setMargins(0, 0, dp(4), 0)
             }
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E2633"))
+                setStroke(dp(1), Color.parseColor("#2E3A4E"))
+                cornerRadius = dp(10).toFloat()
+            }
+            background = bg
+            setTextColor(Color.parseColor("#E0E6ED"))
             setOnClickListener {
                 val tpl = SchoolData.loadTemplate(this@MainActivity, dow)
                 if (tpl != null) {
@@ -654,6 +869,13 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 setMargins(dp(4), 0, 0, 0)
             }
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E2633"))
+                setStroke(dp(1), Color.parseColor("#2E3A4E"))
+                cornerRadius = dp(10).toFloat()
+            }
+            background = bg
+            setTextColor(Color.parseColor("#E0E6ED"))
             setOnClickListener {
                 val current = input.text.toString().trim()
                 if (current.isNotEmpty()) {
@@ -765,9 +987,12 @@ class MainActivity : Activity() {
         })
         c1.addView(minutesLabel)
         c1.addView(seek)
-        c1.addView(button("Добавить плитку в шторку") { addTile() })
+        c1.addView(button("Добавить плитку в шторку", style = "normal") { addTile() })
         c1.addView(
-            button(if (SleepTimer.isRunning(this)) "Отменить таймер" else "Запустить таймер сейчас") {
+            button(
+                if (SleepTimer.isRunning(this)) "Отменить таймер" else "Запустить таймер сейчас",
+                style = if (SleepTimer.isRunning(this)) "danger" else "primary"
+            ) {
                 if (SleepTimer.isRunning(this)) {
                     SleepTimer.cancel(this)
                 } else {
@@ -782,7 +1007,7 @@ class MainActivity : Activity() {
         val rules = RuleStore.load(this)
         if (rules.isEmpty()) c2.addView(hint("Правил пока нет."))
         for (r in rules) c2.addView(ruleRow(r))
-        c2.addView(button("+ Добавить правило") { editRule(null) })
+        c2.addView(button("+ Добавить правило", style = "normal") { editRule(null) })
         col.addView(c2)
     }
 
@@ -794,6 +1019,7 @@ class MainActivity : Activity() {
         val info = TextView(this)
         info.text = r.action.title + "\n" + describe(r)
         info.textSize = 16f
+        info.setTextColor(Color.parseColor("#E6EDF3"))
         info.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         info.setOnClickListener { editRule(r) }
         val sw = Switch(this)
@@ -839,12 +1065,33 @@ class MainActivity : Activity() {
         )
         spinner.setSelection(action.ordinal)
 
-        val startBtn = Button(this)
-        startBtn.isAllCaps = false
-        val endBtn = Button(this)
-        endBtn.isAllCaps = false
-        val daysBtn = Button(this)
-        daysBtn.isAllCaps = false
+        val startBtn = Button(this).apply {
+            isAllCaps = false
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E2633"))
+                setStroke(dp(1), Color.parseColor("#2E3A4E"))
+                cornerRadius = dp(10).toFloat()
+            }
+            setTextColor(Color.parseColor("#E0E6ED"))
+        }
+        val endBtn = Button(this).apply {
+            isAllCaps = false
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E2633"))
+                setStroke(dp(1), Color.parseColor("#2E3A4E"))
+                cornerRadius = dp(10).toFloat()
+            }
+            setTextColor(Color.parseColor("#E0E6ED"))
+        }
+        val daysBtn = Button(this).apply {
+            isAllCaps = false
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E2633"))
+                setStroke(dp(1), Color.parseColor("#2E3A4E"))
+                cornerRadius = dp(10).toFloat()
+            }
+            setTextColor(Color.parseColor("#E0E6ED"))
+        }
 
         fun refresh() {
             startBtn.text = if (action.hasEnd) "Начало: ${fmt(start)}" else "Время: ${fmt(start)}"
@@ -958,7 +1205,7 @@ class MainActivity : Activity() {
         } else {
             for (entry in log) c.addView(tv(entry, 13f))
         }
-        c.addView(button("Очистить журнал") {
+        c.addView(button("Очистить журнал", style = "normal") {
             EventLog.clear(this)
             render()
         })

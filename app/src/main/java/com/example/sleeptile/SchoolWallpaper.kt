@@ -84,16 +84,13 @@ object SchoolWallpaper {
             else -> h * 0.50f
         }
 
-        // если строк много — уменьшаем, чтобы всё влезло
         var base = w / 24f * sizeFactor
-        val rows = lessons.size + 2.2f
+        val rows = lessons.size + 2.5f
         val need = rows * base * 1.7f
         val room = h * 0.94f - top
         if (need > room) base *= room / need
 
-        // заголовок: день + класс (если выбран)
-        val klassStr = SchoolSettings.klass(ctx)
-        val title = SchoolData.dayTitle(date) + if (klassStr.isNotEmpty()) " · $klassStr" else ""
+        val title = SchoolData.dayTitle(date)
         paint.typeface = Typeface.DEFAULT_BOLD
         paint.color = sub
         paint.textSize = base * 1.1f
@@ -102,7 +99,6 @@ object SchoolWallpaper {
         c.drawText(title, margin, y, paint)
         y += base * 1.9f
 
-        // строки уроков
         val numX = margin
         val timeX = margin + base * 1.7f
         val textX = if (showTimes) timeX + base * 3.9f else timeX
@@ -138,6 +134,25 @@ object SchoolWallpaper {
 
             y += base * 1.7f
         }
+
+        // Питание под списком уроков строчными буквами (завтрак, обед, завтрак и обед)
+        val mealChoice = SchoolSettings.mealPlan(ctx)
+        val mealText = when (mealChoice) {
+            1 -> "завтрак"
+            2 -> "обед"
+            3 -> "завтрак и обед"
+            else -> ""
+        }
+        if (mealText.isNotEmpty()) {
+            y += base * 0.6f
+            paint.typeface = Typeface.DEFAULT
+            paint.textSize = base * 0.72f
+            paint.color = sub
+            paint.alpha = 175
+            paint.textAlign = Paint.Align.LEFT
+            c.drawText(mealText, margin, y, paint)
+        }
+
         return bmp
     }
 
@@ -145,8 +160,7 @@ object SchoolWallpaper {
 
     private fun signature(ctx: Context, date: LocalDate, lessons: List<ResolvedLesson>): String {
         val sb = StringBuilder()
-        sb.append(date.toString()).append('|').append(SchoolSettings.klass(ctx)).append('|')
-            .append(SchoolSettings.group(ctx)).append('|')
+        sb.append(date.toString()).append('|').append(SchoolSettings.mealPlan(ctx)).append('|')
         for (l in lessons) sb.append(l.n).append(l.subject).append(l.room).append(l.start).append(';')
         return sb.toString().hashCode().toString()
     }
@@ -210,7 +224,6 @@ object SchoolWallpaper {
 
     // ---------- автоматическая проверка ----------
 
-    /** Если расписание изменилось — спрашиваем (уведомлением) или сразу ставим обои. */
     fun autoCheck(ctx: Context, data: SchoolDataSet, now: Long) {
         if (!enabled(ctx) || SchoolData.testActive(ctx)) return
         val rel = SchoolData.relevantDay(ctx, data, now) ?: return
